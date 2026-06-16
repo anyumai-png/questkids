@@ -26,6 +26,19 @@
 - `assets/visual-direction-concept.png`：視覺方向參考圖。
 - `iphone-home.png`：目前 MVP 在 iPhone 尺寸的首頁驗證截圖。
 
+## 發布到 GitHub Pages
+
+這個專案是純靜態 app，不需要 build。已加入 `.github/workflows/pages.yml`，推上 GitHub 後可以用 GitHub Actions 自動發布。
+
+1. 在 GitHub 建立一個新 repository。
+2. 把本機專案連到該 repository，並 push 到 `main` branch。
+3. 到 GitHub repository 的 `Settings` -> `Pages`。
+4. 在 `Build and deployment` 的 `Source` 選 `GitHub Actions`。
+5. 回到 `Actions` 分頁，執行或等待 `Deploy QuestKids to GitHub Pages`。
+6. 部署完成後，GitHub 會顯示 Pages 網址。
+
+如果只想用 GitHub Pages 的傳統設定，也可以在 `Settings` -> `Pages` 選 `Deploy from a branch`，branch 選 `main`，folder 選 `/root`。
+
 ## 下一階段
 
 - 接 Supabase/Firebase/Postgres API。
