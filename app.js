@@ -473,6 +473,8 @@ const demoState = () => {
     narratorCollapsed: true,
     narratorFabX: null,
     narratorFabY: null,
+    narratorAutoCollapseAt: 0,
+    mapZoom: 1,
     timer: { running: false, secondsLeft: 0, totalSeconds: 0, intervalId: null },
     children: [
       {
@@ -557,9 +559,10 @@ const demoState = () => {
   };
 };
 
-const STORE_VERSION = 6;
+const STORE_VERSION = 7;
 let state = loadState();
 let liveClockIntervalId = null;
+let narratorAutoTimerId = null;
 
 function loadState() {
   try {
@@ -583,6 +586,8 @@ function migrateState(saved) {
   if (merged.pauseEncouragement == null) merged.pauseEncouragement = null;
   if (!merged.onboardingStep) merged.onboardingStep = "profile";
   if (typeof merged.narratorCollapsed !== "boolean") merged.narratorCollapsed = true;
+  if (typeof merged.mapZoom !== "number") merged.mapZoom = 1;
+  if (typeof merged.narratorAutoCollapseAt !== "number") merged.narratorAutoCollapseAt = 0;
   if (typeof merged.settings.onboardingComplete !== "boolean") merged.settings.onboardingComplete = Boolean(saved.children?.length);
   if (!merged.settings.parentPin) merged.settings.parentPin = "1234";
   if (typeof merged.settings.parentVerified !== "boolean") merged.settings.parentVerified = false;
@@ -951,6 +956,7 @@ function go(route) {
   if (route === "parent") state.settings.parentVerified = false;
   state.route = route;
   if (route === "kid" && !state.kidTab) state.kidTab = "island";
+  if (route === "kid") wakeNarrator("guide");
   if (route !== "kid") state.kidZoneFocus = null;
   if (route !== "kid") state.kidTaskExpanded = false;
   saveState();
@@ -969,6 +975,13 @@ function setKidTab(tab) {
 function selectMapZone(zoneId) {
   state.kidZoneFocus = state.kidZoneFocus === zoneId ? null : zoneId;
   state.kidTaskExpanded = false;
+  if (state.kidZoneFocus) wakeNarrator("guide");
+  saveState();
+  render();
+}
+
+function setMapZoom(nextZoom) {
+  state.mapZoom = Math.max(0.92, Math.min(1.22, Number(nextZoom) || 1));
   saveState();
   render();
 }
@@ -987,8 +1000,15 @@ function setNarratorTab(tab) {
 
 function setNarratorCollapsed(collapsed) {
   state.narratorCollapsed = collapsed;
+  if (collapsed) state.narratorAutoCollapseAt = 0;
   saveState();
   render();
+}
+
+function wakeNarrator(tab = "guide") {
+  state.narratorTab = tab;
+  state.narratorCollapsed = false;
+  state.narratorAutoCollapseAt = Date.now() + 6500;
 }
 
 function setNarratorFabPosition(x, y) {
@@ -1153,14 +1173,31 @@ function zoneStats(childId = selectedChild()?.id) {
   });
 }
 
+function nextTaskForZone(zoneId, childId = selectedChild()?.id) {
+  return childTasks(childId).find((task) => zoneForTask(task).id === zoneId && !isDoneToday(task.id));
+}
+
 function islandMap(options = {}) {
   const child = selectedChild();
   const zones = child ? zoneStats(child.id) : zoneCatalog.map((zone) => ({ ...zone, total: 0, done: 0, progress: 0 }));
   const overall = child ? todayCompletionRate(child.id) : 0;
+  const zoom = Number(state.mapZoom || 1);
+  const canvasWidth = Math.round(760 * zoom);
+  const canvasHeight = Math.round(560 * zoom);
+  const focusedZone = state.kidZoneFocus ? zones.find((zone) => zone.id === state.kidZoneFocus) : null;
+  const zoneTask = focusedZone ? nextTaskForZone(focusedZone.id, child?.id) : null;
   return `
     <div class="map-card illustrated ${options.compact ? "compact" : ""}">
+      <div class="map-toolbar" aria-label="地圖操作">
+        <span>${icon("spark")} 拖動地圖探索</span>
+        <div class="map-zoom">
+          <button type="button" onclick="setMapZoom(${(zoom - 0.1).toFixed(2)})" aria-label="縮小地圖">−</button>
+          <button type="button" onclick="setMapZoom(1)" aria-label="重設地圖">1x</button>
+          <button type="button" onclick="setMapZoom(${(zoom + 0.1).toFixed(2)})" aria-label="放大地圖">+</button>
+        </div>
+      </div>
       <div class="map-scroll" data-map-scroll>
-        <div class="map-canvas">
+        <div class="map-canvas" style="width:${canvasWidth}px; height:${canvasHeight}px;">
           <div class="map-sky"></div>
           <div class="island-shape"></div>
           <div class="island-path"></div>
@@ -1173,7 +1210,7 @@ function islandMap(options = {}) {
                   <span class="zone-pin">${icon(zone.icon)}</span>
                   <span class="zone-label">
                     <strong class="zone-title">${zone.name}</strong>
-                    <small class="zone-meta">本區 ${zone.done}/${zone.total || 0}</small>
+                    <small class="zone-meta">${zone.progress}%</small>
                   </span>
                 </button>
               `,
@@ -1181,6 +1218,24 @@ function islandMap(options = {}) {
             .join("")}
         </div>
       </div>
+      ${
+        focusedZone
+          ? `
+            <div class="map-zone-dock ${focusedZone.theme}">
+              <div>
+                <span>${icon(focusedZone.icon)} ${focusedZone.name}</span>
+                <strong>${focusedZone.done}/${focusedZone.total || 0}</strong>
+              </div>
+              <p>${zoneTask ? esc(firstStepForTask(zoneTask)) : "這一區今天已經亮起來了。"}</p>
+              ${
+                zoneTask
+                  ? `<button class="button primary" onclick="startTask('${zoneTask.id}')">開始第一步</button>`
+                  : `<button class="button ghost" onclick="selectMapZone('${focusedZone.id}')">返回地圖</button>`
+              }
+            </div>
+          `
+          : ""
+      }
       <div class="map-progress">
         <span>今日島嶼進度</span>
         <strong>${overall}%</strong>
@@ -1693,6 +1748,7 @@ function startTask(taskId) {
   state.activeTaskId = taskId;
   state.activeDelayType = null;
   state.route = "detect";
+  wakeNarrator("guide");
   if (task) resetTimerForTask(task);
   saveState();
   render();
@@ -2211,6 +2267,17 @@ function initMapInteractions() {
 }
 
 function initFloatingWidgets() {
+  clearTimeout(narratorAutoTimerId);
+  document.querySelectorAll("[data-narrator-auto]").forEach((widget) => {
+    const collapseAt = Number(widget.dataset.narratorAuto || 0);
+    const delay = collapseAt - Date.now();
+    if (delay > 0) {
+      narratorAutoTimerId = setTimeout(() => {
+        if (state.narratorAutoCollapseAt === collapseAt) setNarratorCollapsed(true);
+      }, delay);
+    }
+  });
+
   document.querySelectorAll("[data-narrator-fab]").forEach((fab) => {
     if (fab.dataset.bound === "true") return;
     fab.dataset.bound = "true";
@@ -2556,11 +2623,12 @@ function floatingNarratorWidget(route = state.route) {
     return `
       <button class="narrator-fab route-${route}" data-narrator-fab ${fabStyle} onclick="setNarratorCollapsed(false)" aria-label="打開任務小旁白">
         <span class="narrator-fab-core">${icon("lumo")}</span>
+        <span class="narrator-fab-pulse" aria-hidden="true"></span>
       </button>
     `;
   }
   return `
-    <aside class="narrator-widget route-${route}">
+    <aside class="narrator-widget route-${route}" data-narrator-auto="${state.narratorAutoCollapseAt || 0}">
       <div class="narrator-head">
         <div class="narrator-cast">
           <div class="narrator-avatar guide">${icon("lumo")}</div>
