@@ -182,6 +182,26 @@ const cardCatalog = [
     fact: "很多龜可以把頭和腳縮入殼內，用硬殼保護自己。",
   },
   {
+    id: "pet_worry_beast",
+    type: "pet",
+    name: "緊張獸",
+    rarity: "gentle",
+    icon: "worrybeast",
+    zone: "calm",
+    story: "牠不是來嚇你，而是提醒你：緊張時可以先停一停。",
+    fact: "緊張時深呼吸可以幫身體慢慢回到比較平靜的狀態。",
+  },
+  {
+    id: "animal_dino_card",
+    type: "item",
+    name: "恐龍卡",
+    rarity: "shine",
+    icon: "dino",
+    zone: "study",
+    story: "這張卡會把一隻小恐龍加入動物圖鑑。",
+    fact: "恐龍曾經在地球上生活了很長時間，牠們有很多不同大小和形狀。",
+  },
+  {
     id: "item_focus_lantern",
     type: "item",
     name: "專心小燈",
@@ -274,7 +294,7 @@ const cardCatalog = [
   {
     id: "skill_shoelace",
     type: "skill",
-    name: "鞋帶小達人",
+    name: "綁鞋帶能力卡",
     rarity: "gentle",
     icon: "shoe",
     zone: "morning",
@@ -285,6 +305,16 @@ const cardCatalog = [
       minutes: 5,
       steps: ["把兩條鞋帶交叉拉緊", "做一個小圈圈", "另一條鞋帶繞圈再穿過洞"],
     },
+  },
+  {
+    id: "food_rice_ball",
+    type: "food",
+    name: "飯糰",
+    rarity: "gentle",
+    icon: "rice",
+    zone: "morning",
+    story: "小小一個飯糰，像把能量握在手心。",
+    fact: "飯糰在日本和很多亞洲地方都很常見，方便帶著外出吃。",
   },
   {
     id: "skill_paper_boat",
@@ -435,10 +465,12 @@ const demoState = () => {
     pendingConfirm: null,
     cardReveal: null,
     taskCelebration: null,
+    pauseEncouragement: null,
     kidZoneFocus: null,
     kidTaskExpanded: false,
+    onboardingStep: "profile",
     narratorTab: "guide",
-    narratorCollapsed: false,
+    narratorCollapsed: true,
     narratorFabX: null,
     narratorFabY: null,
     timer: { running: false, secondsLeft: 0, totalSeconds: 0, intervalId: null },
@@ -515,14 +547,17 @@ const demoState = () => {
     ],
     settings: {
       demoMode: true,
-      parentPin: "",
+      onboardingComplete: false,
+      parentPin: "1234",
+      parentVerified: false,
+      parentPinInput: "",
       cloudSync: false,
       dataRetention: "local-only",
     },
   };
 };
 
-const STORE_VERSION = 5;
+const STORE_VERSION = 6;
 let state = loadState();
 let liveClockIntervalId = null;
 
@@ -545,6 +580,13 @@ function migrateState(saved) {
     settings: { ...base.settings, ...(saved.settings || {}) },
     timer: { running: false, secondsLeft: 0, totalSeconds: 0, intervalId: null },
   };
+  if (merged.pauseEncouragement == null) merged.pauseEncouragement = null;
+  if (!merged.onboardingStep) merged.onboardingStep = "profile";
+  if (typeof merged.narratorCollapsed !== "boolean") merged.narratorCollapsed = true;
+  if (typeof merged.settings.onboardingComplete !== "boolean") merged.settings.onboardingComplete = Boolean(saved.children?.length);
+  if (!merged.settings.parentPin) merged.settings.parentPin = "1234";
+  if (typeof merged.settings.parentVerified !== "boolean") merged.settings.parentVerified = false;
+  if (typeof merged.settings.parentPinInput !== "string") merged.settings.parentPinInput = "";
   for (const key of ["children", "tasks", "completions", "collection", "skillMissions", "moodLog", "rewards"]) {
     if (!Array.isArray(merged[key])) merged[key] = base[key];
   }
@@ -690,7 +732,7 @@ function completeSkillMission(missionId) {
 }
 
 function typeLabel(type) {
-  return { pet: "夥伴", item: "物件", deco: "裝飾", place: "名勝", skill: "能力" }[type] || "收藏";
+  return { pet: "情緒小夥伴", item: "動物圖鑑", deco: "地圖裝飾", place: "名勝", skill: "能力卡", food: "美食" }[type] || "收藏";
 }
 
 function rarityLabel(rarity) {
@@ -720,6 +762,7 @@ function cardTypeNudge(card) {
     deco: "新裝飾會慢慢把島變成你的世界。",
     place: "世界名勝卡會把真實地方帶進探索地圖。",
     skill: "能力卡會解鎖一個生活小秘技任務。",
+    food: "美食卡會收藏不同地方的小知識。",
   };
   return copy[card.type] || "新的收藏已加入圖鑑。";
 }
@@ -752,6 +795,8 @@ function icon(name) {
     candy: "🍬",
     cat: "🐱",
     turtle: "🐢",
+    worrybeast: "😟",
+    dino: "🦖",
     compass: "🧭",
     mountain: "🗻",
     tower: "🗼",
@@ -769,6 +814,7 @@ function icon(name) {
     reef: "🪸",
     bubble: "🫧",
     towel: "🧺",
+    rice: "🍙",
   };
   return icons[name] || name?.slice(0, 1)?.toUpperCase() || "*";
 }
@@ -791,6 +837,7 @@ function childAvatarMarkup(size = "chip") {
 
 function appNav() {
   const items = [
+    ["onboarding", "建立人物"],
     ["home", "首頁"],
     ["kid", "孩子端"],
     ["parent", "家長端"],
@@ -832,6 +879,7 @@ function render() {
     <div class="shell route-${route}">
       ${appNav()}
       <main class="main">
+        ${route === "onboarding" ? onboardingView() : ""}
         ${route === "home" ? homeView() : ""}
         ${route === "kid" ? kidView() : ""}
         ${route === "detect" ? detectView() : ""}
@@ -843,6 +891,7 @@ function render() {
       ${state.pendingConfirm ? confirmModal() : ""}
       ${state.taskCelebration ? taskCelebrationModal() : ""}
       ${state.cardReveal ? cardRevealModal() : ""}
+      ${state.pauseEncouragement ? pauseEncouragementModal() : ""}
     </div>
   `;
   initMapInteractions();
@@ -899,6 +948,7 @@ function viewRevealedCard() {
 }
 
 function go(route) {
+  if (route === "parent") state.settings.parentVerified = false;
   state.route = route;
   if (route === "kid" && !state.kidTab) state.kidTab = "island";
   if (route !== "kid") state.kidZoneFocus = null;
@@ -961,6 +1011,89 @@ function initLiveClock() {
   if (document.querySelector("[data-live-clock]")) {
     liveClockIntervalId = setInterval(update, 30000);
   }
+}
+
+function onboardingView() {
+  const child = selectedChild() || state.children[0];
+  const children = state.children || [];
+  return `
+    <section class="onboarding-board">
+      <div class="onboarding-art">
+        <div class="shore-card">
+          <span class="tag">建立人物檔案</span>
+          <h1>歡迎來到小任務島！</h1>
+          <div class="big-avatar child-avatar-shell">${childAvatarMarkup("map")}</div>
+          <div class="lumo-choice">${icon("lumo")} 夥伴：Lumo</div>
+          <p class="muted">選好人物後，任務時間會按年齡自動變得剛剛好。</p>
+        </div>
+      </div>
+      <form class="onboarding-form panel" onsubmit="saveOnboarding(event)">
+        <div class="section-title">
+          <div>
+            <span class="tag">0</span>
+            <h2>建立人物檔案</h2>
+          </div>
+        </div>
+        <label>
+          <span>名字</span>
+          <input name="name" value="${esc(child?.name || "小明")}" maxlength="12" />
+        </label>
+        <label>
+          <span>年齡</span>
+          <select name="age">
+            ${[5, 6, 7, 8, 9, 10]
+              .map((age) => `<option value="${age}" ${Number(child?.age || 7) === age ? "selected" : ""}>${age} 歲</option>`)
+              .join("")}
+          </select>
+        </label>
+        <div class="avatar-picker" aria-label="選擇角色">
+          ${["explorer", "brave", "calm"]
+            .map((avatar, index) => `<button type="button" class="${(child?.avatar || "explorer") === avatar ? "active" : ""}" onclick="setOnboardingAvatar('${avatar}')">${childAvatarMarkup(index === 0 ? "chip" : "narrator")}</button>`)
+            .join("")}
+        </div>
+        <div class="profile-switcher">
+          <span class="muted">選擇孩子</span>
+          ${children
+            .map(
+              (item) => `
+                <button type="button" class="${item.id === state.selectedChildId ? "active" : ""}" onclick="selectChild('${item.id}')">
+                  ${esc(item.name)}
+                </button>
+              `,
+            )
+            .join("")}
+        </div>
+        <div class="timer-default-note">
+          <strong>${formatSeconds(timerSecondsForAge(Number(child?.age || 7)))}</strong>
+          <span>預設專注時間</span>
+        </div>
+        <button class="button primary large" type="submit">開始冒險吧！</button>
+      </form>
+    </section>
+  `;
+}
+
+function setOnboardingAvatar(avatar) {
+  const child = selectedChild();
+  if (!child) return;
+  child.avatar = avatar;
+  saveState();
+  render();
+}
+
+function saveOnboarding(event) {
+  event.preventDefault();
+  const child = selectedChild();
+  if (!child) return;
+  const data = new FormData(event.target);
+  child.name = (data.get("name") || child.name || "小明").toString().trim().slice(0, 12);
+  child.age = Number(data.get("age") || child.age || 7);
+  child.companion = "Lumo";
+  state.settings.onboardingComplete = true;
+  state.route = "kid";
+  state.kidTab = "island";
+  saveState();
+  render();
 }
 
 function homeView() {
@@ -1060,6 +1193,7 @@ function islandMap(options = {}) {
 function shouldShowMoodModal() {
   const child = selectedChild();
   if (!child) return false;
+  if (state.route !== "kid") return false;
   return !state.moodLog.some((entry) => entry.childId === child.id && entry.date === todayKey());
 }
 
@@ -1068,7 +1202,7 @@ function moodModal() {
     <div class="modal-backdrop mood-backdrop" role="dialog" aria-modal="true" aria-labelledby="mood-title">
       <div class="modal">
         <h2 id="mood-title">今天開始前，先看看心情</h2>
-        <p class="muted">選一個最接近現在的感覺。這不是評分，只是幫大人用更合適的方法陪你開始。</p>
+        <p class="muted">選一個最接近現在的感覺。心情會同步到家長儀表板，幫大人用更合適的方法陪你開始。</p>
         <div class="mood-grid">
           ${moods
             .map(
@@ -1082,6 +1216,7 @@ function moodModal() {
             )
             .join("")}
         </div>
+        <button class="button ghost" onclick="skipMood()">跳過</button>
       </div>
     </div>
   `;
@@ -1090,6 +1225,18 @@ function moodModal() {
 function recordMood(moodId) {
   const child = selectedChild();
   state.moodLog.push({ id: uid("mood"), childId: child.id, moodId, date: todayKey(), createdAt: new Date().toISOString() });
+  if (moodId === "worry" || moodId === "resist") {
+    state.kidZoneFocus = "calm";
+    state.kidTaskExpanded = true;
+  }
+  saveState();
+  render();
+}
+
+function skipMood() {
+  const child = selectedChild();
+  if (!child) return;
+  state.moodLog.push({ id: uid("mood"), childId: child.id, moodId: "skipped", date: todayKey(), skipped: true, createdAt: new Date().toISOString() });
   saveState();
   render();
 }
@@ -1230,6 +1377,25 @@ function kidIslandView({ child, tasks, rate, mood }) {
       </div>
       ${islandMap()}
     </section>
+
+    ${
+      focusedZone?.id === "calm"
+        ? `
+          <section class="panel warmup-panel">
+            <div>
+              <span class="tag">${icon("water")} 平靜海灣暖身任務</span>
+              <h2>冇問題，休息一下！</h2>
+              <p class="muted">先做一個很輕的小暖身，Lumo 會等你慢慢回來。</p>
+            </div>
+            <div class="warmup-steps">
+              <span>深呼吸三次</span>
+              <span>情緒小日記</span>
+              <span>伸展小運動</span>
+            </div>
+          </section>
+        `
+        : ""
+    }
 
     ${
       focusTask
@@ -1391,6 +1557,7 @@ function kidAchievementsView({ child, badges, skillMissions, streak }) {
 function kidCollectionView({ child, ownedCards }) {
   const stars = child.stars || 0;
   const packProgress = Math.min(100, Math.round((stars / 3) * 100));
+  const dinosaurOwned = ownedCards.filter((card) => /恐龍|龍|dino/i.test(`${card.name} ${card.story}`)).length;
   return `
     <section class="kid-page-head">
       <span class="tag">${icon("book")} 探索圖鑑</span>
@@ -1414,6 +1581,17 @@ function kidCollectionView({ child, ownedCards }) {
       <div class="section-title">
         <h2>圖鑑</h2>
         <span class="muted">${ownedCards.length}/${cardCatalog.length}</span>
+      </div>
+      <div class="collection-tabs">
+        <span>情緒小夥伴</span>
+        <span>動物圖鑑</span>
+        <span>能力卡</span>
+        <span>名勝</span>
+        <span>美食</span>
+      </div>
+      <div class="series-progress">
+        <strong>恐龍系列 12/25</strong>
+        <span class="muted">已發現 ${Math.max(1, dinosaurOwned)} 張</span>
       </div>
       <div class="collection-grid">
         ${collectionCards(child.id).map((card) => collectibleCard(card)).join("")}
@@ -1445,6 +1623,7 @@ function skillMissionCard(mission) {
       <div>
         <h3>${esc(mission.title)}</h3>
         <p class="muted">${card.story}</p>
+        <p class="notice">完成練習後解鎖能力</p>
         <ol class="skill-steps">
           ${mission.steps.map((step) => `<li>${esc(step)}</li>`).join("")}
         </ol>
@@ -1555,7 +1734,10 @@ function detectView() {
           )
           .join("")}
       </div>
-      <button class="button large primary" ${state.activeDelayType ? "" : "disabled"} onclick="enterQuest()">進入小任務</button>
+      <div class="row">
+        <button class="button large primary" ${state.activeDelayType ? "" : "disabled"} onclick="enterQuest()">進入小任務</button>
+        <button class="button ghost" onclick="skipDelayType()">跳過</button>
+      </div>
     </section>
   `;
 }
@@ -1564,6 +1746,11 @@ function selectDelayType(typeId) {
   state.activeDelayType = typeId;
   saveState();
   render();
+}
+
+function skipDelayType() {
+  state.activeDelayType = "activation";
+  enterQuest();
 }
 
 function questView() {
@@ -1675,14 +1862,19 @@ function timerPanel(task, child) {
 }
 
 function ageMinutes(age) {
-  if (age <= 5) return 3;
-  if (age <= 7) return 5;
-  if (age <= 9) return 8;
-  return 10;
+  if (age <= 7) return 15;
+  if (age <= 10) return 20;
+  return 25;
+}
+
+function timerSecondsForAge(age) {
+  return ageMinutes(age) * 60;
 }
 
 function timerSecondsForTask(task, child = selectedChild()) {
-  return Math.min(task.minutes, ageMinutes(child?.age || 7)) * 60;
+  const parentOverride = Number(child?.timerMinutes || 0);
+  const minutes = parentOverride || ageMinutes(child?.age || 7);
+  return minutes * 60;
 }
 
 function uniqueSteps(steps) {
@@ -1790,9 +1982,19 @@ function startTimer(seconds) {
   render();
 }
 
-function pauseTimer() {
+function pauseTimer(showEncouragement = true) {
+  const task = state.tasks.find((item) => item.id === state.activeTaskId);
+  const total = state.timer.totalSeconds || 0;
+  const elapsed = total - (state.timer.secondsLeft || total);
   state.timer.running = false;
   clearInterval(state.timer.intervalId);
+  if (showEncouragement && state.route === "quest" && task && elapsed > 0) {
+    state.pauseEncouragement = {
+      taskId: task.id,
+      taskTitle: task.title,
+      progress: total ? Math.max(8, Math.round((elapsed / total) * 100)) : 20,
+    };
+  }
   saveState();
   render();
 }
@@ -1827,7 +2029,7 @@ function finalizeTask(taskId) {
       hasSkillMission: activeSkillMissionCount(child.id) > 0,
     };
   }
-  pauseTimer();
+  pauseTimer(false);
   sessionStorage.removeItem(`quest.steps.${taskId}`);
   state.route = "kid";
   state.activeTaskId = null;
@@ -1901,6 +2103,44 @@ function viewSkillMissionFromCelebration() {
   state.taskCelebration = null;
   state.route = "kid";
   state.kidTab = "achievements";
+  saveState();
+  render();
+}
+
+function pauseEncouragementModal() {
+  const pause = state.pauseEncouragement;
+  return `
+    <div class="modal-backdrop pause-backdrop" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+      <div class="modal pause-modal">
+        <div class="pause-companion">${icon("lumo")}</div>
+        <span class="tag">${esc(pause.taskTitle || "小任務")}</span>
+        <h2 id="pause-title">冇問題，休息一下！</h2>
+        <p class="muted">下次再試，Lumo 會等你</p>
+        <div class="pause-ring" style="--timer:${pause.progress || 20}%">
+          <strong>${pause.progress || 20}%</strong>
+        </div>
+        <div class="row">
+          <button class="button primary" onclick="retryPausedTask()">再試一次</button>
+          <button class="button" onclick="returnIslandFromPause()">返回小島</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function retryPausedTask() {
+  const taskId = state.pauseEncouragement?.taskId;
+  state.pauseEncouragement = null;
+  state.route = "quest";
+  if (taskId) state.activeTaskId = taskId;
+  saveState();
+  render();
+}
+
+function returnIslandFromPause() {
+  state.pauseEncouragement = null;
+  state.route = "kid";
+  state.kidTab = "island";
   saveState();
   render();
 }
@@ -2039,6 +2279,7 @@ function calculateStreak(childId) {
 }
 
 function parentView() {
+  if (!state.settings.parentVerified) return parentGateView();
   const tabs = [
     ["overview", "總覽"],
     ["children", "孩子檔案"],
@@ -2063,6 +2304,55 @@ function parentView() {
       ${parentTabView()}
     </section>
   `;
+}
+
+function parentGateView() {
+  const input = state.settings.parentPinInput || "";
+  return `
+    <section class="parent-gate">
+      <div class="pin-card panel">
+        <span class="tag">${icon("shield")} 家長</span>
+        <h1>家長驗證</h1>
+        <p class="muted">請輸入家長 PIN 碼</p>
+        <div class="pin-dots" aria-label="PIN">
+          ${[0, 1, 2, 3].map((index) => `<span class="${input.length > index ? "filled" : ""}"></span>`).join("")}
+        </div>
+        <div class="pin-pad">
+          ${["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
+            .map((digit) => `<button class="button" onclick="enterParentPin('${digit}')">${digit}</button>`)
+            .join("")}
+          <button class="button" onclick="deleteParentPin()">←</button>
+        </div>
+        <p class="muted small">Demo PIN：1234</p>
+      </div>
+    </section>
+  `;
+}
+
+function enterParentPin(digit) {
+  const next = `${state.settings.parentPinInput || ""}${digit}`.slice(0, 4);
+  state.settings.parentPinInput = next;
+  if (next.length === 4) {
+    if (next === (state.settings.parentPin || "1234")) {
+      state.settings.parentVerified = true;
+      state.settings.parentPinInput = "";
+    } else {
+      state.settings.parentPinInput = "";
+      state.pendingConfirm = {
+        action: "noop",
+        title: "PIN 碼不正確",
+        body: "請再試一次。",
+      };
+    }
+  }
+  saveState();
+  render();
+}
+
+function deleteParentPin() {
+  state.settings.parentPinInput = (state.settings.parentPinInput || "").slice(0, -1);
+  saveState();
+  render();
 }
 
 function setParentTab(tab) {
@@ -2419,7 +2709,7 @@ function childrenTab() {
                     <div>
                       <div class="avatar child-avatar-shell">${childAvatarMarkup("chip")}</div>
                       <h3>${esc(child.name)}</h3>
-                      <p class="muted">${child.age} 歲 · 建議短衝刺 ${ageMinutes(child.age)} 分鐘</p>
+                      <p class="muted">${child.age} 歲 · 專注時間 ${child.timerMinutes || ageMinutes(child.age)} 分鐘</p>
                     </div>
                     <button class="button ${state.selectedChildId === child.id ? "primary" : ""}" onclick="selectChild('${child.id}')">${state.selectedChildId === child.id ? "使用中" : "切換"}</button>
                   </div>
@@ -2470,6 +2760,12 @@ function childrenTab() {
               <span class="small-tag">${icon("sprout")} ${activeSkillMissionCount(current.id)} 個能力任務進行中</span>
             </div>
           </div>
+          <form class="timer-settings" onsubmit="updateChildTimer(event)">
+            <label class="field">專注時間
+              <input name="timerMinutes" type="number" min="10" max="25" value="${current.timerMinutes || ageMinutes(current.age)}" />
+            </label>
+            <button class="button primary">儲存</button>
+          </form>
         </section>
       </section>
     </div>
@@ -2491,6 +2787,7 @@ function addChild(event) {
     age: Number(data.get("age")),
     avatar: "explorer",
     companion: data.get("companion"),
+    timerMinutes: ageMinutes(Number(data.get("age"))),
     note: data.get("note").trim(),
     xp: 0,
     streak: 0,
@@ -2498,6 +2795,15 @@ function addChild(event) {
   };
   state.children.push(child);
   state.selectedChildId = child.id;
+  saveState();
+  render();
+}
+
+function updateChildTimer(event) {
+  event.preventDefault();
+  const child = selectedChild();
+  if (!child) return;
+  child.timerMinutes = Math.max(10, Math.min(25, Number(new FormData(event.target).get("timerMinutes") || ageMinutes(child.age))));
   saveState();
   render();
 }
@@ -2804,6 +3110,11 @@ function runConfirmedAction() {
   }
   if (pending?.action === "skill-complete") {
     finalizeSkillMission(pending.missionId);
+    return;
+  }
+  if (pending?.action === "noop") {
+    saveState();
+    render();
     return;
   }
   if (pending?.action === "clear") localStorage.removeItem(STORE_KEY);
