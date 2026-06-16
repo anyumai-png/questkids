@@ -1833,17 +1833,22 @@ function questView() {
           <div class="section-title">
             <div>
               <h2>只做下一小步</h2>
-              <p class="muted">完成一步按一下，不用一次做完。</p>
+              <p class="muted">點一張小卡，完成一步就會亮起。</p>
             </div>
             <span class="tag">+${task.xp} XP</span>
           </div>
-          <div class="grid">
+          <div class="quest-step-map" aria-label="小任務步驟">
             ${steps
               .map(
                 (step, index) => `
                   <button class="step-item ${completedSteps.includes(index) ? "done" : ""}" onclick="toggleStep('${task.id}', ${index})">
-                    <strong>${index + 1}. ${esc(step)}</strong>
-                    <p class="muted">${stepHint(type.id, index)}</p>
+                    <span class="step-badge">${index + 1}</span>
+                    <span class="step-picture">${stepPicture(task, step, index)}</span>
+                    <span class="step-copy">
+                      <strong>${esc(shortStepLabel(step))}</strong>
+                      <small>${stepHint(type.id, index)}</small>
+                    </span>
+                    <span class="step-state">${completedSteps.includes(index) ? "✓" : "點一下"}</span>
                   </button>
                 `,
               )
@@ -1878,11 +1883,27 @@ function buildSteps(task, typeId) {
 
 function stepHint(typeId, index) {
   const hints = {
-    activation: ["先讓身體到位。", "東西準備好，開始就容易一點。", "只看下一步，不看全部。"],
-    anxiety: ["先降低壓力。", "找一個有把握的位置。", "試做比做對更重要。"],
-    temptation: ["先移走拉力。", "時間短一點比較容易開始。", "交換規則要清楚。"],
+    activation: ["先到位", "準備好", "做一下"],
+    anxiety: ["先看看", "找容易", "試 3 分鐘"],
+    temptation: ["先收起", "開計時", "再玩"],
   };
-  return hints[typeId]?.[index] || "慢慢來。";
+  return hints[typeId]?.[index] || "慢慢來";
+}
+
+function shortStepLabel(step) {
+  const text = String(step || "").replace(/^先/, "").replace(/^把/, "").trim();
+  if (text.length <= 8) return text;
+  return `${text.slice(0, 8)}…`;
+}
+
+function stepPicture(task, step, index) {
+  const text = `${task?.title || ""} ${task?.area || ""} ${step || ""}`;
+  if (/書包|功課袋|水壺|backpack|bag/.test(text)) return ["🎒", "📚", "💧"][index] || "🎒";
+  if (/功課|作業|溫習|默書|數學|中文|英文|課本|書/.test(text)) return ["📖", "✏️", "⭐"][index] || "📘";
+  if (/房間|收拾|整理|玩具|衣物/.test(text)) return ["🧺", "🧸", "✨"][index] || "🏠";
+  if (/睡前|放鬆|刷牙|洗澡|休息|呼吸/.test(text)) return ["🌙", "🫧", "💤"][index] || "💧";
+  if (/玩具|手機|影片/.test(text)) return ["📦", "⏱", "🎮"][index] || "✨";
+  return ["👀", "🖐", "⭐"][index] || "🌱";
 }
 
 function getQuestSteps(taskId) {
