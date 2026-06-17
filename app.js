@@ -912,9 +912,9 @@ function icon(name) {
   return icons[name] || name?.slice(0, 1)?.toUpperCase() || "*";
 }
 
-function childAvatarMarkup(size = "chip") {
+function childAvatarMarkup(size = "chip", avatar = selectedChild()?.avatar || "explorer") {
   return `
-    <span class="child-avatar-figure ${size}">
+    <span class="child-avatar-figure ${size} avatar-${avatar}">
       <span class="child-avatar-hat"></span>
       <span class="child-avatar-hair"></span>
       <span class="child-avatar-face">
@@ -1183,59 +1183,166 @@ function initLiveClock() {
 function onboardingView() {
   const child = selectedChild() || state.children[0];
   const children = state.children || [];
+  const step = ["profile", "rhythm", "companion"].includes(state.onboardingStep) ? state.onboardingStep : "profile";
+  const stepIndex = { profile: 0, rhythm: 1, companion: 2 }[step];
+  const avatarChoices = [
+    { id: "explorer", label: "好奇探索家", detail: "喜歡發現新事物" },
+    { id: "brave", label: "勇氣小隊長", detail: "願意試第一步" },
+    { id: "calm", label: "平靜觀察員", detail: "慢慢想也很好" },
+  ];
   return `
     <section class="onboarding-board">
       <div class="onboarding-art">
-        <div class="shore-card">
-          <span class="tag">建立人物檔案</span>
-          <h1>歡迎來到小任務島！</h1>
-          <div class="big-avatar child-avatar-shell">${childAvatarMarkup("map")}</div>
-          <div class="lumo-choice">${icon("lumo")} 夥伴：Lumo</div>
-          <p class="muted">選好人物後，任務時間會按年齡自動變得剛剛好。</p>
+        <div class="onboarding-sky-copy">
+          <span class="onboarding-kicker">${icon("spark")} 歡迎來到</span>
+          <h1>QuestKids<br /><strong>小任務島</strong></h1>
+          <p>每一個大任務，都可以從一小步開始。</p>
         </div>
-      </div>
-      <form class="onboarding-form panel" onsubmit="saveOnboarding(event)">
-        <div class="section-title">
-          <div>
-            <span class="tag">0</span>
-            <h2>建立人物檔案</h2>
+        <div class="onboarding-character-stage">
+          <div class="onboarding-avatar child-avatar-shell">${childAvatarMarkup("map", child?.avatar)}</div>
+          <div class="onboarding-lumo" aria-label="Lumo">
+            <span class="lumo-glow"></span>
+            <span class="lumo-face">•ᴗ•</span>
+          </div>
+          <div class="onboarding-speech">
+            ${step === "profile" ? `你好，${esc(child?.name || "小探索家")}！先選一個最像你的角色。` : ""}
+            ${step === "rhythm" ? "我會按你的年齡，把專注時間調得剛剛好。" : ""}
+            ${step === "companion" ? "準備好了嗎？我會陪你探索每一個小任務。" : ""}
           </div>
         </div>
-        <label>
-          <span>名字</span>
-          <input name="name" value="${esc(child?.name || "小明")}" maxlength="12" />
-        </label>
-        <label>
-          <span>年齡</span>
-          <select name="age">
-            ${[5, 6, 7, 8, 9, 10]
-              .map((age) => `<option value="${age}" ${Number(child?.age || 7) === age ? "selected" : ""}>${age} 歲</option>`)
-              .join("")}
-          </select>
-        </label>
-        <div class="avatar-picker" aria-label="選擇角色">
-          ${["explorer", "brave", "calm"]
-            .map((avatar, index) => `<button type="button" class="${(child?.avatar || "explorer") === avatar ? "active" : ""}" onclick="setOnboardingAvatar('${avatar}')">${childAvatarMarkup(index === 0 ? "chip" : "narrator")}</button>`)
-            .join("")}
-        </div>
-        <div class="profile-switcher">
-          <span class="muted">選擇孩子</span>
-          ${children
+      </div>
+      <section class="onboarding-form panel">
+        <div class="onboarding-progress" aria-label="建立人物進度">
+          ${["認識你", "任務節奏", "選擇夥伴"]
             .map(
-              (item) => `
-                <button type="button" class="${item.id === state.selectedChildId ? "active" : ""}" onclick="selectChild('${item.id}')">
-                  ${esc(item.name)}
-                </button>
+              (label, index) => `
+                <div class="${index === stepIndex ? "active" : ""} ${index < stepIndex ? "done" : ""}">
+                  <span>${index < stepIndex ? "✓" : index + 1}</span>
+                  <small>${label}</small>
+                </div>
               `,
             )
             .join("")}
         </div>
-        <div class="timer-default-note">
-          <strong>${formatSeconds(timerSecondsForAge(Number(child?.age || 7)))}</strong>
-          <span>預設專注時間</span>
+
+        ${
+          step === "profile"
+            ? `
+              <div class="onboarding-step-head">
+                <span class="tag">建立人物檔案</span>
+                <h2>你想成為哪位探索家？</h2>
+                <p>這個角色會跟你一起出現在小島地圖。</p>
+              </div>
+              <label class="onboarding-name-field">
+                <span>你的名字</span>
+                <input id="onboarding-name" name="name" value="${esc(child?.name || "小晴")}" maxlength="12" autocomplete="off" />
+              </label>
+              <div class="onboarding-avatar-grid" aria-label="選擇角色">
+                ${avatarChoices
+                  .map(
+                    (avatar) => `
+                      <button type="button" class="onboarding-avatar-card ${child?.avatar === avatar.id ? "active" : ""}" onclick="setOnboardingAvatar('${avatar.id}')">
+                        <span class="avatar-preview child-avatar-shell">${childAvatarMarkup("map", avatar.id)}</span>
+                        <strong>${avatar.label}</strong>
+                        <small>${avatar.detail}</small>
+                        <span class="selection-mark">${child?.avatar === avatar.id ? "✓" : ""}</span>
+                      </button>
+                    `,
+                  )
+                  .join("")}
+              </div>
+              <button class="button primary large onboarding-next" type="button" onclick="advanceOnboardingProfile()">下一步</button>
+            `
+            : ""
+        }
+
+        ${
+          step === "rhythm"
+            ? `
+              <div class="onboarding-step-head">
+                <span class="tag">任務節奏</span>
+                <h2>${esc(child?.name || "小探索家")}今年幾歲？</h2>
+                <p>年齡只用來設定合適的預設專注時間，家長日後可以調整。</p>
+              </div>
+              <div class="age-choice-grid" aria-label="選擇年齡">
+                ${[5, 6, 7, 8, 9, 10]
+                  .map(
+                    (age) => `
+                      <button type="button" class="${Number(child?.age) === age ? "active" : ""}" onclick="setOnboardingAge(${age})">
+                        <strong>${age}</strong><span>歲</span>
+                      </button>
+                    `,
+                  )
+                  .join("")}
+              </div>
+              <div class="focus-rhythm-preview">
+                <div class="mini-focus-ring"><strong>${ageMinutes(Number(child?.age || 7))}</strong><span>分鐘</span></div>
+                <div>
+                  <span class="tag">${Number(child?.age || 7) <= 7 ? "輕巧起步" : "專注探索"}</span>
+                  <h3>一次只完成一小段</h3>
+                  <p>${Number(child?.age || 7) <= 7 ? "短一點，更容易開始；完成後可以休息。" : "保留足夠時間進入狀態，也不會太漫長。"}</p>
+                </div>
+              </div>
+              <div class="onboarding-actions">
+                <button class="button" type="button" onclick="setOnboardingStep('profile')">返回</button>
+                <button class="button primary" type="button" onclick="setOnboardingStep('companion')">下一步</button>
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          step === "companion"
+            ? `
+              <div class="onboarding-step-head">
+                <span class="tag">選擇夥伴</span>
+                <h2>Lumo 想跟你一起出發</h2>
+                <p>它會提醒任務進度、說鼓勵的話；說完後會縮成可移動的小光點。</p>
+              </div>
+              <article class="companion-choice-card active">
+                <div class="companion-portrait">
+                  <span class="lumo-glow"></span>
+                  <span>•ᴗ•</span>
+                </div>
+                <div>
+                  <span class="small-tag">島嶼引路員</span>
+                  <h3>Lumo</h3>
+                  <p>溫柔、好奇，最擅長把困難任務變成容易開始的一步。</p>
+                </div>
+                <span class="companion-check">✓</span>
+              </article>
+              <div class="ready-profile-card">
+                <span class="ready-avatar child-avatar-shell">${childAvatarMarkup("map", child?.avatar)}</span>
+                <div>
+                  <strong>${esc(child?.name || "小探索家")} · ${Number(child?.age || 7)} 歲</strong>
+                  <span>${ageMinutes(Number(child?.age || 7))} 分鐘專注節奏 · Lumo 陪伴</span>
+                </div>
+              </div>
+              <div class="onboarding-actions">
+                <button class="button" type="button" onclick="setOnboardingStep('rhythm')">返回</button>
+                <button class="button primary" type="button" onclick="finishOnboarding()">登上小任務島</button>
+              </div>
+            `
+            : ""
+        }
+
+        <div class="onboarding-profile-switcher">
+          <span>人物檔案</span>
+          <div>
+            ${children
+              .map(
+                (item) => `
+                  <button type="button" class="${item.id === state.selectedChildId ? "active" : ""}" onclick="selectChild('${item.id}')">
+                    <span class="child-avatar-shell">${childAvatarMarkup("chip", item.avatar)}</span>
+                    ${esc(item.name)}
+                  </button>
+                `,
+              )
+              .join("")}
+            <button type="button" class="add-profile" onclick="addOnboardingChild()" aria-label="新增孩子">＋</button>
+          </div>
         </div>
-        <button class="button primary large" type="submit">開始冒險吧！</button>
-      </form>
+      </section>
     </section>
   `;
 }
@@ -1243,20 +1350,76 @@ function onboardingView() {
 function setOnboardingAvatar(avatar) {
   const child = selectedChild();
   if (!child) return;
+  const nameInput = document.querySelector("#onboarding-name");
+  if (nameInput?.value.trim()) child.name = nameInput.value.trim().slice(0, 12);
   child.avatar = avatar;
   saveState();
   render();
 }
 
-function saveOnboarding(event) {
-  event.preventDefault();
+function setOnboardingStep(step) {
+  state.onboardingStep = step;
+  saveState();
+  render();
+}
+
+function advanceOnboardingProfile() {
   const child = selectedChild();
   if (!child) return;
-  const data = new FormData(event.target);
-  child.name = (data.get("name") || child.name || "小明").toString().trim().slice(0, 12);
-  child.age = Number(data.get("age") || child.age || 7);
+  const nameInput = document.querySelector("#onboarding-name");
+  child.name = (nameInput?.value || child.name || "小探索家").trim().slice(0, 12) || "小探索家";
+  state.onboardingStep = "rhythm";
+  saveState();
+  render();
+}
+
+function setOnboardingAge(age) {
+  const child = selectedChild();
+  if (!child) return;
+  child.age = age;
+  child.timerMinutes = ageMinutes(age);
+  saveState();
+  render();
+}
+
+function addOnboardingChild() {
+  const sourceChild = selectedChild();
+  const child = {
+    id: uid("child"),
+    name: `小探索家 ${state.children.length + 1}`,
+    age: 7,
+    avatar: "explorer",
+    companion: "Lumo",
+    timerMinutes: ageMinutes(7),
+    note: "",
+    xp: 0,
+    stars: 3,
+    candies: 0,
+    streak: 0,
+    createdAt: todayKey(),
+  };
+  const sourceTasks = childTasks(sourceChild?.id).slice(0, 4);
+  state.children.push(child);
+  state.tasks.push(
+    ...sourceTasks.map((task) => ({
+      ...task,
+      id: uid("task"),
+      childId: child.id,
+    })),
+  );
+  state.collection.push({ childId: child.id, cardId: "pet_lumo", count: 1, level: 1, unlockedAt: todayKey() });
+  state.selectedChildId = child.id;
+  state.onboardingStep = "profile";
+  saveState();
+  render();
+}
+
+function finishOnboarding() {
+  const child = selectedChild();
+  if (!child) return;
   child.companion = "Lumo";
   state.settings.onboardingComplete = true;
+  state.onboardingStep = "profile";
   state.route = "kid";
   state.kidTab = "island";
   saveState();
