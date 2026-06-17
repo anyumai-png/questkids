@@ -574,6 +574,8 @@ let state = loadState();
 let liveClockIntervalId = null;
 let narratorAutoTimerId = null;
 let collectionDetailCardId = null;
+let collectionTypeFilter = "all";
+let collectionOwnershipFilter = "all";
 
 function loadState() {
   try {
@@ -680,6 +682,29 @@ function collectionCards(childId = selectedChild()?.id) {
     ...card,
     owned: items.find((item) => item.cardId === card.id) || null,
   }));
+}
+
+function filteredCollectionCards(childId = selectedChild()?.id) {
+  return collectionCards(childId).filter((card) => {
+    const typeMatches = collectionTypeFilter === "all" || card.type === collectionTypeFilter;
+    const ownershipMatches =
+      collectionOwnershipFilter === "all" ||
+      (collectionOwnershipFilter === "owned" && card.owned) ||
+      (collectionOwnershipFilter === "locked" && !card.owned);
+    return typeMatches && ownershipMatches;
+  });
+}
+
+function setCollectionTypeFilter(type) {
+  collectionTypeFilter = type;
+  collectionDetailCardId = null;
+  render();
+}
+
+function setCollectionOwnershipFilter(filter) {
+  collectionOwnershipFilter = filter;
+  collectionDetailCardId = null;
+  render();
 }
 
 function nextPackPreviewCards(childId = selectedChild()?.id, limit = 3) {
@@ -1129,7 +1154,8 @@ function closeCollectionCard() {
 }
 
 function browseCollectionCard(direction) {
-  const cards = collectionCards(selectedChild()?.id);
+  const cards = filteredCollectionCards(selectedChild()?.id);
+  if (!cards.length) return;
   const currentIndex = cards.findIndex((card) => card.id === collectionDetailCardId);
   if (currentIndex < 0) return;
   const nextIndex = (currentIndex + direction + cards.length) % cards.length;
@@ -2049,7 +2075,21 @@ function kidAchievementsView({ child, badges, skillMissions, streak }) {
 function kidCollectionView({ child, ownedCards }) {
   const stars = child.stars || 0;
   const packProgress = Math.min(100, Math.round((stars / 3) * 100));
-  const dinosaurOwned = ownedCards.filter((card) => /恐龍|龍|dino/i.test(`${card.name} ${card.story}`)).length;
+  const allCards = collectionCards(child.id);
+  const visibleCards = filteredCollectionCards(child.id);
+  const typeOptions = [
+    ["all", "全部", "card"],
+    ["pet", "夥伴", "lumo"],
+    ["item", "物件", "compass"],
+    ["skill", "能力", "star"],
+    ["place", "名勝", "mountain"],
+    ["food", "美食", "rice"],
+    ["deco", "裝飾", "flag"],
+  ];
+  const activeSeriesCards = collectionTypeFilter === "all" ? allCards : allCards.filter((card) => card.type === collectionTypeFilter);
+  const activeSeriesOwned = activeSeriesCards.filter((card) => card.owned).length;
+  const seriesProgress = activeSeriesCards.length ? Math.round((activeSeriesOwned / activeSeriesCards.length) * 100) : 0;
+  const activeSeriesLabel = collectionTypeFilter === "all" ? "全部收藏" : typeLabel(collectionTypeFilter);
   return `
     <section class="kid-page-head">
       <span class="tag">${icon("book")} 探索圖鑑</span>
@@ -2074,19 +2114,48 @@ function kidCollectionView({ child, ownedCards }) {
         <h2>圖鑑</h2>
         <span class="muted">${ownedCards.length}/${cardCatalog.length}</span>
       </div>
-      <div class="collection-tabs">
-        <span>情緒小夥伴</span>
-        <span>動物圖鑑</span>
-        <span>能力卡</span>
-        <span>名勝</span>
-        <span>美食</span>
+      <div class="collection-filter-bar">
+        <div class="collection-tabs" aria-label="卡牌系列">
+          ${typeOptions
+            .map(([type, label, iconName]) => {
+              const cards = type === "all" ? allCards : allCards.filter((card) => card.type === type);
+              const count = cards.filter((card) => card.owned).length;
+              return `
+                <button class="${collectionTypeFilter === type ? "active" : ""}" onclick="setCollectionTypeFilter('${type}')">
+                  <span>${icon(iconName)}</span>
+                  <strong>${label}</strong>
+                  <small>${count}/${cards.length}</small>
+                </button>
+              `;
+            })
+            .join("")}
+        </div>
+        <div class="collection-status-filter" aria-label="發現狀態">
+          <button class="${collectionOwnershipFilter === "all" ? "active" : ""}" onclick="setCollectionOwnershipFilter('all')">全部</button>
+          <button class="${collectionOwnershipFilter === "owned" ? "active" : ""}" onclick="setCollectionOwnershipFilter('owned')">已發現</button>
+          <button class="${collectionOwnershipFilter === "locked" ? "active" : ""}" onclick="setCollectionOwnershipFilter('locked')">未發現</button>
+        </div>
       </div>
-      <div class="series-progress">
-        <strong>恐龍系列 12/25</strong>
-        <span class="muted">已發現 ${Math.max(1, dinosaurOwned)} 張</span>
+      <div class="collection-series-summary">
+        <div>
+          <span class="tag">${activeSeriesLabel}</span>
+          <strong>${activeSeriesOwned}/${activeSeriesCards.length} 已發現</strong>
+        </div>
+        <div class="series-meter" aria-label="${activeSeriesLabel}完成 ${seriesProgress}%">
+          <span style="--value:${seriesProgress}%"></span>
+        </div>
+        <b>${seriesProgress}%</b>
       </div>
       <div class="collection-grid">
-        ${collectionCards(child.id).map((card) => collectibleCard(card)).join("")}
+        ${
+          visibleCards.length
+            ? visibleCards.map((card) => collectibleCard(card)).join("")
+            : `<div class="collection-empty">
+                <span>${icon("compass")}</span>
+                <strong>這個分類暫時沒有卡牌</strong>
+                <p>試試切換「全部」或另一個發現狀態。</p>
+              </div>`
+        }
       </div>
     </section>
   `;
