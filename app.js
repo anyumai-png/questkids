@@ -468,6 +468,7 @@ const demoState = () => {
     pauseEncouragement: null,
     kidZoneFocus: null,
     kidTaskExpanded: false,
+    focusSkillMissionId: null,
     onboardingStep: "profile",
     narratorTab: "guide",
     narratorCollapsed: true,
@@ -588,6 +589,7 @@ function migrateState(saved) {
   if (typeof merged.narratorCollapsed !== "boolean") merged.narratorCollapsed = true;
   if (typeof merged.mapZoom !== "number") merged.mapZoom = 1;
   if (typeof merged.narratorAutoCollapseAt !== "number") merged.narratorAutoCollapseAt = 0;
+  if (!("focusSkillMissionId" in merged)) merged.focusSkillMissionId = null;
   if (typeof merged.settings.onboardingComplete !== "boolean") merged.settings.onboardingComplete = Boolean(saved.children?.length);
   if (!merged.settings.parentPin) merged.settings.parentPin = "1234";
   if (typeof merged.settings.parentVerified !== "boolean") merged.settings.parentVerified = false;
@@ -713,6 +715,7 @@ function createSkillMission(childId, card) {
     title: card.skillMission.title,
     minutes: card.skillMission.minutes,
     steps: card.skillMission.steps,
+    completedSteps: [],
     status: "locked",
     createdAt: todayKey(),
   });
@@ -727,6 +730,7 @@ function finalizeSkillMission(missionId) {
   const child = selectedChild();
   if (!mission || !child) return;
   mission.status = "unlocked";
+  mission.completedSteps = mission.steps.map((_, index) => index);
   mission.completedAt = todayKey();
   child.xp = (child.xp || 0) + 25;
   child.stars = (child.stars || 0) + 1;
@@ -735,12 +739,36 @@ function finalizeSkillMission(missionId) {
 }
 
 function completeSkillMission(missionId) {
+  const mission = state.skillMissions.find((item) => item.id === missionId);
+  if (!mission) return;
+  const done = new Set(mission.completedSteps || []);
+  if (done.size < mission.steps.length) {
+    state.pendingConfirm = {
+      action: "skill-complete",
+      missionId,
+      title: "還有步驟未亮起",
+      body: "可以先逐步點亮練習卡。若孩子已經和家長一起完成，也可以確認解鎖能力。",
+    };
+    render();
+    return;
+  }
   state.pendingConfirm = {
     action: "skill-complete",
     missionId,
     title: "完成練習了嗎？",
     body: "請先和孩子一起做完練習步驟，再按確認解鎖能力。",
   };
+  render();
+}
+
+function toggleSkillStep(missionId, index) {
+  const mission = state.skillMissions.find((item) => item.id === missionId);
+  if (!mission || mission.status === "unlocked") return;
+  const steps = new Set(mission.completedSteps || []);
+  if (steps.has(index)) steps.delete(index);
+  else steps.add(index);
+  mission.completedSteps = [...steps].sort((a, b) => a - b);
+  saveState();
   render();
 }
 
@@ -1713,28 +1741,58 @@ function collectibleCard(card) {
       <p class="muted">${owned ? card.story : "完成任務、打開卡包後會慢慢遇到。"}</p>
       ${owned ? `<p class="fact-box">小知識：${card.fact}</p>` : ""}
       <span class="small-tag">${owned ? `${typeLabel(card.type)} · ${mission?.status === "unlocked" ? "已解鎖" : `Lv.${owned.level || 1}`}` : "等待發現"}</span>
+      ${owned && mission && mission.status !== "unlocked" ? `<button class="button primary card-action" onclick="viewSkillMission('${mission.id}')">去練習</button>` : ""}
     </article>
   `;
 }
 
+function viewSkillMission(missionId) {
+  state.route = "kid";
+  state.kidTab = "achievements";
+  state.narratorTab = "guide";
+  state.narratorCollapsed = false;
+  state.narratorAutoCollapseAt = Date.now() + 6500;
+  state.focusSkillMissionId = missionId;
+  saveState();
+  render();
+}
+
 function skillMissionCard(mission) {
   const card = cardCatalog.find((item) => item.id === mission.cardId);
+  const completed = new Set(mission.completedSteps || []);
+  const progress = mission.steps.length ? Math.round((completed.size / mission.steps.length) * 100) : 0;
   return `
-    <article class="skill-card ${mission.status === "unlocked" ? "done" : ""}">
+    <article class="skill-card ${mission.status === "unlocked" ? "done" : ""} ${state.focusSkillMissionId === mission.id ? "focused" : ""}">
       <div class="task-icon">${icon(card.icon)}</div>
       <div>
-        <h3>${esc(mission.title)}</h3>
-        <p class="muted">${card.story}</p>
+        <div class="skill-head">
+          <div>
+            <h3>${esc(mission.title)}</h3>
+            <p class="muted">${card.story}</p>
+          </div>
+          <span class="small-tag">${mission.status === "unlocked" ? "已解鎖" : `${completed.size}/${mission.steps.length}`}</span>
+        </div>
+        <div class="skill-progress"><span style="--value:${mission.status === "unlocked" ? 100 : progress}%"></span></div>
         <p class="notice">完成練習後解鎖能力</p>
-        <ol class="skill-steps">
-          ${mission.steps.map((step) => `<li>${esc(step)}</li>`).join("")}
-        </ol>
-        <span class="small-tag">${mission.minutes} 分鐘 · ${mission.status === "unlocked" ? "已解鎖" : "練習後解鎖"}</span>
+        <div class="skill-steps">
+          ${mission.steps
+            .map(
+              (step, index) => `
+                <button class="${completed.has(index) || mission.status === "unlocked" ? "done" : ""}" type="button" onclick="toggleSkillStep('${mission.id}', ${index})">
+                  <span>${index + 1}</span>
+                  <strong>${esc(step)}</strong>
+                  <em>${completed.has(index) || mission.status === "unlocked" ? "✓" : "點亮"}</em>
+                </button>
+              `,
+            )
+            .join("")}
+        </div>
+        <span class="small-tag">${mission.minutes} 分鐘 · ${mission.status === "unlocked" ? "已學會" : "練習中"}</span>
       </div>
       ${
         mission.status === "unlocked"
           ? `<span class="tag">已學會</span>`
-          : `<button class="button primary" onclick="completeSkillMission('${mission.id}')">完成練習</button>`
+          : `<button class="button primary" onclick="completeSkillMission('${mission.id}')">${completed.size >= mission.steps.length ? "解鎖能力" : "完成練習"}</button>`
       }
     </article>
   `;

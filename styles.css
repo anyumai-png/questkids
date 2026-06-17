@@ -2994,25 +2994,119 @@ p {
   display: grid;
   grid-template-columns: auto 1fr auto;
   gap: 14px;
-  align-items: center;
+  align-items: start;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 14px;
-  background: rgba(255, 255, 255, 0.86);
+  border-radius: 24px;
+  padding: 16px;
+  background:
+    radial-gradient(circle at 92% 14%, rgba(255, 240, 191, 0.42), transparent 9rem),
+    rgba(255, 255, 255, 0.9);
+  box-shadow: 0 12px 28px rgba(35, 48, 40, 0.08);
+}
+
+.skill-card.focused {
+  border-color: rgba(242, 189, 58, 0.72);
+  box-shadow:
+    0 18px 38px rgba(35, 48, 40, 0.12),
+    0 0 0 4px rgba(242, 189, 58, 0.18);
 }
 
 .skill-card.done {
-  background: var(--mint);
+  background:
+    radial-gradient(circle at 92% 14%, rgba(255, 255, 255, 0.72), transparent 9rem),
+    rgba(223, 245, 220, 0.92);
+}
+
+.skill-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.skill-head h3 {
+  margin: 0 0 6px;
+}
+
+.skill-progress {
+  height: 10px;
+  border-radius: 999px;
+  margin: 10px 0;
+  overflow: hidden;
+  background: rgba(35, 48, 40, 0.08);
+}
+
+.skill-progress span {
+  display: block;
+  width: var(--value);
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #48a86f, #f2bd3a);
 }
 
 .skill-steps {
-  margin: 8px 0;
-  padding-left: 20px;
-  color: var(--muted);
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
 }
 
-.skill-steps li + li {
-  margin-top: 4px;
+.skill-steps button {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 48px;
+  border: 1px solid rgba(35, 48, 40, 0.08);
+  border-radius: 16px;
+  padding: 9px 10px;
+  color: #0d2a22;
+  background: rgba(255, 255, 255, 0.76);
+  text-align: left;
+}
+
+.skill-steps button span,
+.skill-steps button em {
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.skill-steps button span {
+  width: 26px;
+  height: 26px;
+  color: #68410f;
+  background: #fff0bf;
+  font-size: 12px;
+}
+
+.skill-steps button strong {
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.skill-steps button em {
+  min-width: 48px;
+  padding: 6px 8px;
+  color: #5d4314;
+  background: #fff0bf;
+  font-size: 12px;
+}
+
+.skill-steps button.done {
+  background: rgba(223, 245, 220, 0.8);
+}
+
+.skill-steps button.done em {
+  color: #0f6b49;
+  background: #cceecd;
+}
+
+.card-action {
+  position: relative;
+  margin-top: 10px;
+  width: 100%;
 }
 
 .card-modal {
