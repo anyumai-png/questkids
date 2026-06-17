@@ -37,11 +37,11 @@ function esc(value) {
 }
 
 const moods = [
-  { id: "happy", label: "好有精神", icon: "sun-smile", tint: "gold", note: "可以試一個小挑戰。" },
-  { id: "ok", label: "還可以", icon: "mint-smile", tint: "mint", note: "慢慢開始就好。" },
-  { id: "flat", label: "一般般", icon: "cloud-neutral", tint: "sky", note: "先做最小一步。" },
-  { id: "worry", label: "有點擔心", icon: "raindrop-worry", tint: "blue", note: "大人先陪你拆細。" },
-  { id: "resist", label: "不太想做", icon: "storm-grump", tint: "rose", note: "只做 60 秒也算開始。" },
+  { id: "happy", label: "好有精神", icon: "sun-smile", tint: "gold", note: "可以試一個小挑戰。", scene: "太陽能量", action: "開始探險" },
+  { id: "ok", label: "還可以", icon: "mint-smile", tint: "mint", note: "慢慢開始就好。", scene: "小草狀態", action: "慢慢開始" },
+  { id: "flat", label: "一般般", icon: "cloud-neutral", tint: "sky", note: "先做最小一步。", scene: "雲朵休息", action: "做最小步" },
+  { id: "worry", label: "有點擔心", icon: "raindrop-worry", tint: "blue", note: "大人先陪你拆細。", scene: "雨滴提醒", action: "去平靜海灣" },
+  { id: "resist", label: "不太想做", icon: "storm-grump", tint: "rose", note: "只做 60 秒也算開始。", scene: "小風暴", action: "先做 60 秒" },
 ];
 
 const delayTypes = [
@@ -50,6 +50,9 @@ const delayTypes = [
     icon: "swirl",
     title: "不知道如何開始型",
     summary: "目標不是做完，而是先找到第一步。",
+    short: "找不到第一步",
+    visual: "🧭",
+    action: "先拿出一樣東西",
     parentScript: "我們先不要求全部完成，先做第一步：{firstStep} 就可以。",
     strategy: "任務拆解",
     risk: "容易站著發呆、找東西、來回走動。",
@@ -59,6 +62,9 @@ const delayTypes = [
     icon: "cloud",
     title: "怕難怕失敗型",
     summary: "降低心理成本，容許試做和改正。",
+    short: "怕做錯",
+    visual: "🛟",
+    action: "先試 3 分鐘",
     parentScript: "這次不求完美，我陪你試做 3 分鐘，做錯了也可以修改。",
     strategy: "情緒確認",
     risk: "容易說不會、害怕做錯、想由大人代做。",
@@ -68,6 +74,9 @@ const delayTypes = [
     icon: "spark",
     title: "想玩即時誘惑型",
     summary: "短衝刺加清楚交換，先做後玩。",
+    short: "想先玩",
+    visual: "🎮",
+    action: "收起誘惑",
     parentScript: "先完成一個短衝刺，之後就有一段清楚的玩樂時間。",
     strategy: "限時挑戰",
     risk: "容易被手機、玩具或影片拉走。",
@@ -1337,10 +1346,13 @@ function moodModal() {
           ${moods
             .map(
               (mood) => `
-                <button class="mood-button" onclick="recordMood('${mood.id}')">
-                  ${moodFace(mood, "small")}
+                <button class="mood-button mood-${mood.tint}" onclick="recordMood('${mood.id}')" aria-label="${esc(mood.label)}，${esc(mood.action)}">
+                  <span class="mood-scene-art" aria-hidden="true">
+                    ${moodFace(mood, "small")}
+                  </span>
                   <strong>${mood.label}</strong>
-                  <small>${mood.note}</small>
+                  <small>${mood.scene}</small>
+                  <em>${mood.action}</em>
                 </button>
               `,
             )
@@ -1884,12 +1896,14 @@ function detectView() {
         ${delayTypes
           .map(
             (type) => `
-              <button class="type-button ${state.activeDelayType === type.id ? "selected" : ""}" onclick="selectDelayType('${type.id}')">
-                <span class="emoji">${icon(type.icon)}</span>
-                <h3>${type.title}</h3>
-                <p>${type.summary}</p>
-                <span class="small-tag">${type.strategy}</span>
-                <p class="muted">${type.risk}</p>
+              <button class="type-button ${state.activeDelayType === type.id ? "selected" : ""}" onclick="selectDelayType('${type.id}')" aria-label="${esc(type.title)}">
+                <span class="type-visual" aria-hidden="true">${type.visual}</span>
+                <span class="type-copy">
+                  <span class="small-tag">${type.strategy}</span>
+                  <strong>${type.short}</strong>
+                  <small>${type.summary}</small>
+                </span>
+                <span class="type-action">${type.action}</span>
               </button>
             `,
           )
