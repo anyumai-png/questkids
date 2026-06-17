@@ -4899,6 +4899,185 @@ p {
   font-size: 11px;
 }
 
+.collection-card-button {
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.collection-card-button:hover,
+.collection-card-button:focus-visible {
+  outline: none;
+  transform: translateY(-4px);
+  box-shadow:
+    0 20px 36px rgba(35, 48, 40, 0.2),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.94);
+}
+
+.collection-card-button:focus-visible {
+  box-shadow:
+    0 0 0 4px rgba(58, 123, 213, 0.22),
+    0 20px 36px rgba(35, 48, 40, 0.2);
+}
+
+.card-view-cue {
+  position: relative;
+  z-index: 2;
+  align-self: center;
+  margin-top: 7px;
+  color: #607068;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.collection-detail-backdrop {
+  display: block;
+  overflow-y: auto;
+  padding: 18px;
+  background:
+    radial-gradient(circle at 50% 12%, rgba(255, 231, 132, 0.34), transparent 14rem),
+    rgba(13, 42, 34, 0.78);
+}
+
+.collection-detail-modal {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  background:
+    radial-gradient(circle at 82% 10%, rgba(217, 239, 255, 0.74), transparent 14rem),
+    linear-gradient(145deg, #fffaf0, #eaf6ee);
+}
+
+.collection-detail-toolbar {
+  display: grid;
+  grid-template-columns: 38px 1fr 38px 38px;
+  gap: 7px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.collection-detail-toolbar button {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid rgba(24, 33, 27, 0.12);
+  border-radius: 50%;
+  color: #173328;
+  background: rgba(255, 255, 255, 0.84);
+  font-size: 25px;
+}
+
+.collection-detail-toolbar span {
+  overflow: hidden;
+  color: #4d6258;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collection-detail-toolbar .collection-detail-close {
+  color: #fff;
+  background: #173328;
+}
+
+.collection-detail-stage {
+  display: grid;
+  grid-template-columns: minmax(270px, 0.82fr) minmax(240px, 1fr);
+  gap: 22px;
+  align-items: center;
+}
+
+.collectible-card.detail-card {
+  width: 100%;
+  min-height: 500px;
+  padding: 14px;
+}
+
+.detail-card .card-art {
+  aspect-ratio: 1.25;
+}
+
+.detail-card .card-art-icon {
+  width: 86px;
+  height: 86px;
+  font-size: 48px;
+}
+
+.detail-card.card-pet_lumo .card-art-icon {
+  font-size: 22px;
+}
+
+.detail-card .card-title-lockup h2 {
+  margin: 0;
+  font-size: 25px;
+}
+
+.detail-card .card-flavour {
+  min-height: 0;
+  overflow: visible;
+  font-size: 13px;
+  -webkit-line-clamp: unset;
+}
+
+.detail-card .card-knowledge-seal,
+.detail-card .card-locked-clue {
+  min-height: 78px;
+}
+
+.detail-card .card-knowledge-seal p,
+.detail-card .card-locked-clue p {
+  overflow: visible;
+  font-size: 11px;
+  -webkit-line-clamp: unset;
+}
+
+.collection-detail-copy {
+  display: grid;
+  gap: 12px;
+}
+
+.collection-detail-copy h3 {
+  margin: 0;
+  color: #183227;
+  font-size: 30px;
+  line-height: 1.08;
+}
+
+.collection-detail-copy > p {
+  margin: 0;
+  color: #53675e;
+}
+
+.detail-fact {
+  border-left: 5px solid var(--gold);
+  border-radius: 6px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.detail-fact strong {
+  color: #5a3800;
+}
+
+.detail-fact p {
+  margin: 5px 0 0;
+  color: #42574d;
+}
+
+.detail-fact.locked-fact {
+  border-left-color: #8aa39a;
+}
+
+.collection-detail-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 16px;
+}
+
 .collectible-card.reveal {
   align-self: start;
   height: max-content;
@@ -4967,6 +5146,35 @@ p {
   }
   82% {
     transform: translateX(75%);
+  }
+}
+
+@media (max-width: 620px) {
+  .collection-detail-backdrop {
+    padding: 10px;
+  }
+
+  .collection-detail-modal {
+    padding: 12px;
+  }
+
+  .collection-detail-stage {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .collectible-card.detail-card {
+    width: min(320px, 100%);
+    min-height: 0;
+    margin: 0 auto;
+  }
+
+  .detail-card .card-art {
+    aspect-ratio: 1.45;
+  }
+
+  .collection-detail-copy h3 {
+    font-size: 24px;
   }
 }
 

@@ -573,6 +573,7 @@ const STORE_VERSION = 7;
 let state = loadState();
 let liveClockIntervalId = null;
 let narratorAutoTimerId = null;
+let collectionDetailCardId = null;
 
 function loadState() {
   try {
@@ -1018,6 +1019,7 @@ function render() {
       ${state.pendingConfirm ? confirmModal() : ""}
       ${state.taskCelebration ? taskCelebrationModal() : ""}
       ${state.cardReveal ? cardRevealModal() : ""}
+      ${collectionDetailCardId ? collectionCardDetailModal() : ""}
       ${state.pauseEncouragement ? pauseEncouragementModal() : ""}
     </div>
   `;
@@ -1114,6 +1116,88 @@ function closeCardReveal() {
   state.cardReveal = null;
   saveState();
   render();
+}
+
+function openCollectionCard(cardId) {
+  collectionDetailCardId = cardId;
+  render();
+}
+
+function closeCollectionCard() {
+  collectionDetailCardId = null;
+  render();
+}
+
+function browseCollectionCard(direction) {
+  const cards = collectionCards(selectedChild()?.id);
+  const currentIndex = cards.findIndex((card) => card.id === collectionDetailCardId);
+  if (currentIndex < 0) return;
+  const nextIndex = (currentIndex + direction + cards.length) % cards.length;
+  collectionDetailCardId = cards[nextIndex].id;
+  render();
+}
+
+function collectionCardDetailModal() {
+  const card = collectionCards(selectedChild()?.id).find((item) => item.id === collectionDetailCardId);
+  if (!card) return "";
+  const owned = card.owned;
+  const mission = card.type === "skill" ? state.skillMissions.find((item) => item.childId === selectedChild()?.id && item.cardId === card.id) : null;
+  return `
+    <div class="modal-backdrop collection-detail-backdrop" role="dialog" aria-modal="true" aria-labelledby="collection-detail-title">
+      <div class="modal collection-detail-modal">
+        <div class="collection-detail-toolbar">
+          <button type="button" onclick="browseCollectionCard(-1)" aria-label="上一張卡">‹</button>
+          <span>${owned ? `${cardSerial(card)} · ${typeLabel(card.type)}` : `神秘${typeLabel(card.type)}`}</span>
+          <button type="button" onclick="browseCollectionCard(1)" aria-label="下一張卡">›</button>
+          <button class="collection-detail-close" type="button" onclick="closeCollectionCard()" aria-label="關閉卡牌詳情">×</button>
+        </div>
+        <div class="collection-detail-stage">
+          <article class="collectible-card detail-card card-type-${card.type} zone-${card.zone} ${owned ? card.rarity : "locked"}">
+            <div class="card-frame-line" aria-hidden="true"></div>
+            <div class="card-topline">
+              <span class="card-series">${owned ? `${cardSeriesMark(card.type)} ${typeLabel(card.type)}` : "✦ 未知系列"}</span>
+              <span class="card-serial">${owned ? cardSerial(card) : "QK-???"}</span>
+            </div>
+            ${cardArtwork(card, !owned)}
+            <div class="card-title-lockup">
+              <span class="card-rarity ${owned ? `rarity-${card.rarity}` : ""}">${owned ? rarityLabel(card.rarity) : "未發現"}</span>
+              <h2 id="collection-detail-title">${owned ? card.name : "神秘收藏"}</h2>
+            </div>
+            <p class="card-flavour">${owned ? card.story : "它仍然藏在小任務島某個卡包中，等待和你相遇。"}</p>
+            <div class="${owned ? "card-knowledge-seal" : "card-locked-clue"}">
+              <span>${owned ? "小知識" : "?"}</span>
+              <p>${owned ? card.fact : `這是一張${typeLabel(card.type)}，完成任務收集探索星就有機會發現。`}</p>
+            </div>
+            <div class="card-footer">
+              <span>${owned ? `${icon(zoneCatalog.find((zone) => zone.id === card.zone)?.icon || "sprout")} ${cardZoneLabel(card)}` : "小任務島"}</span>
+              <strong>${owned ? (mission?.status === "unlocked" ? "能力解鎖" : `Lv.${owned.level || 1}`) : "等待發現"}</strong>
+            </div>
+          </article>
+          <div class="collection-detail-copy">
+            <span class="tag">${owned ? "收藏故事" : "神秘線索"}</span>
+            <h3>${owned ? card.name : `${typeLabel(card.type)}尚未發現`}</h3>
+            <p>${owned ? card.story : "繼續完成今日小任務，收集 3 顆探索星便可以打開卡包。"}</p>
+            ${
+              owned
+                ? `<div class="detail-fact">
+                    <strong>你知道嗎？</strong>
+                    <p>${card.fact}</p>
+                  </div>`
+                : `<div class="detail-fact locked-fact">
+                    <strong>發現方法</strong>
+                    <p>完成小任務 → 收集探索星 → 打開任務卡包。</p>
+                  </div>`
+            }
+            ${owned && mission && mission.status !== "unlocked" ? `<button class="button primary" onclick="closeCollectionCard(); viewSkillMission('${mission.id}')">開始能力任務</button>` : ""}
+          </div>
+        </div>
+        <div class="collection-detail-nav">
+          <button class="button" type="button" onclick="browseCollectionCard(-1)">‹ 上一張</button>
+          <button class="button primary" type="button" onclick="browseCollectionCard(1)">下一張 ›</button>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function viewRevealedCard() {
@@ -2012,7 +2096,14 @@ function collectibleCard(card) {
   const owned = card.owned;
   const mission = card.type === "skill" ? state.skillMissions.find((item) => item.childId === selectedChild()?.id && item.cardId === card.id) : null;
   return `
-    <article class="collectible-card card-type-${card.type} zone-${card.zone} ${owned ? card.rarity : "locked"}">
+    <article
+      class="collectible-card collection-card-button card-type-${card.type} zone-${card.zone} ${owned ? card.rarity : "locked"}"
+      role="button"
+      tabindex="0"
+      aria-label="觀賞${owned ? card.name : `神秘${typeLabel(card.type)}`}"
+      onclick="openCollectionCard('${card.id}')"
+      onkeydown="if(event.key === 'Enter' || event.key === ' '){ event.preventDefault(); openCollectionCard('${card.id}'); }"
+    >
       <div class="card-frame-line" aria-hidden="true"></div>
       <div class="card-topline">
         <span class="card-series">${owned ? `${cardSeriesMark(card.type)} ${typeLabel(card.type)}` : "✦ 未知系列"}</span>
@@ -2036,7 +2127,8 @@ function collectibleCard(card) {
         <span>${owned ? `${icon(zoneCatalog.find((zone) => zone.id === card.zone)?.icon || "sprout")} ${cardZoneLabel(card)}` : "小任務島"}</span>
         <strong>${owned ? (mission?.status === "unlocked" ? "能力解鎖" : `Lv.${owned.level || 1}`) : "等待發現"}</strong>
       </div>
-      ${owned && mission && mission.status !== "unlocked" ? `<button class="button primary card-action" onclick="viewSkillMission('${mission.id}')">開始能力任務</button>` : ""}
+      <span class="card-view-cue">點開觀賞</span>
+      ${owned && mission && mission.status !== "unlocked" ? `<button class="button primary card-action" onclick="event.stopPropagation(); viewSkillMission('${mission.id}')">開始能力任務</button>` : ""}
     </article>
   `;
 }
