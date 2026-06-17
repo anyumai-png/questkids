@@ -823,6 +823,40 @@ function rarityLabel(rarity) {
   return { starter: "起點", gentle: "溫柔", rare: "少見", shine: "閃亮" }[rarity] || "收藏";
 }
 
+function cardSeriesMark(type) {
+  return {
+    pet: "✦",
+    item: "◆",
+    deco: "❖",
+    place: "⌂",
+    skill: "★",
+    food: "●",
+  }[type] || "✦";
+}
+
+function cardSerial(card) {
+  const index = cardCatalog.findIndex((item) => item.id === card.id);
+  return `QK-${String(index + 1).padStart(3, "0")}`;
+}
+
+function cardArtwork(card, locked = false) {
+  const artworkIcon = locked ? "?" : card.id === "pet_lumo" ? "•ᴗ•" : icon(card.icon);
+  return `
+    <div class="card-art card-art-${card.type} zone-${card.zone} card-${card.id} ${locked ? "is-locked" : ""}" aria-hidden="true">
+      <span class="card-art-sun"></span>
+      <span class="card-art-cloud cloud-one"></span>
+      <span class="card-art-cloud cloud-two"></span>
+      <span class="card-art-hill hill-back"></span>
+      <span class="card-art-hill hill-front"></span>
+      <span class="card-art-ground"></span>
+      <span class="card-art-spark spark-one">✦</span>
+      <span class="card-art-spark spark-two">✦</span>
+      <span class="card-art-icon">${artworkIcon}</span>
+      <span class="card-art-crest">${locked ? "?" : cardSeriesMark(card.type)}</span>
+    </div>
+  `;
+}
+
 function moodFace(mood, size = "large") {
   if (!mood) return `<div class="mood-face ${size} sky"><span class="mood-orb"></span><span class="mood-mouth neutral"></span></div>`;
   return `
@@ -1002,13 +1036,18 @@ function cardRevealModal() {
       <div class="modal card-modal pack-modal">
         <div class="pack-burst" aria-hidden="true"></div>
         <span class="tag">${reveal.duplicate ? "卡片升級" : "新收藏發現"}</span>
-        <div class="collectible-card reveal ${card.rarity}">
+        <div class="collectible-card reveal card-type-${card.type} zone-${card.zone} ${card.rarity}">
           <div class="shine-line" aria-hidden="true"></div>
-          <div class="card-rarity">${rarityLabel(card.rarity)} · ${typeLabel(card.type)}</div>
-          <div class="card-portrait">
-            <div class="card-icon">${icon(card.icon)}</div>
+          <div class="card-frame-line" aria-hidden="true"></div>
+          <div class="card-topline">
+            <span class="card-series">${cardSeriesMark(card.type)} ${typeLabel(card.type)}</span>
+            <span class="card-serial">${cardSerial(card)}</span>
           </div>
-          <h2 id="card-title">${card.name}</h2>
+          ${cardArtwork(card)}
+          <div class="card-title-lockup">
+            <span class="card-rarity rarity-${card.rarity}">${rarityLabel(card.rarity)}</span>
+            <h2 id="card-title">${card.name}</h2>
+          </div>
           <p class="card-story">${card.story}</p>
           <div class="card-meta-row">
             <span>${icon(zoneCatalog.find((zone) => zone.id === card.zone)?.icon || "sprout")} ${cardZoneLabel(card)}</span>
@@ -1973,14 +2012,31 @@ function collectibleCard(card) {
   const owned = card.owned;
   const mission = card.type === "skill" ? state.skillMissions.find((item) => item.childId === selectedChild()?.id && item.cardId === card.id) : null;
   return `
-    <article class="collectible-card ${owned ? card.rarity : "locked"}">
-      <div class="card-rarity">${owned ? rarityLabel(card.rarity) : "未發現"}</div>
-      <div class="card-icon">${owned ? icon(card.icon) : "?"}</div>
-      <h3>${owned ? card.name : "神秘收藏"}</h3>
-      <p class="muted">${owned ? card.story : "完成任務、打開卡包後會慢慢遇到。"}</p>
-      ${owned ? `<p class="fact-box">小知識：${card.fact}</p>` : ""}
-      <span class="small-tag">${owned ? `${typeLabel(card.type)} · ${mission?.status === "unlocked" ? "已解鎖" : `Lv.${owned.level || 1}`}` : "等待發現"}</span>
-      ${owned && mission && mission.status !== "unlocked" ? `<button class="button primary card-action" onclick="viewSkillMission('${mission.id}')">去練習</button>` : ""}
+    <article class="collectible-card card-type-${card.type} zone-${card.zone} ${owned ? card.rarity : "locked"}">
+      <div class="card-frame-line" aria-hidden="true"></div>
+      <div class="card-topline">
+        <span class="card-series">${owned ? `${cardSeriesMark(card.type)} ${typeLabel(card.type)}` : "✦ 未知系列"}</span>
+        <span class="card-serial">${owned ? cardSerial(card) : "QK-???"}</span>
+      </div>
+      ${cardArtwork(card, !owned)}
+      <div class="card-title-lockup">
+        <span class="card-rarity ${owned ? `rarity-${card.rarity}` : ""}">${owned ? rarityLabel(card.rarity) : "未發現"}</span>
+        <h3>${owned ? card.name : "神秘收藏"}</h3>
+      </div>
+      <p class="card-flavour">${owned ? card.story : "完成小任務，等待它在卡包中與你相遇。"}</p>
+      ${
+        owned
+          ? `<div class="card-knowledge-seal">
+              <span>小知識</span>
+              <p>${card.fact}</p>
+            </div>`
+          : `<div class="card-locked-clue"><span>?</span><p>${typeLabel(card.type)}系列尚未發現</p></div>`
+      }
+      <div class="card-footer">
+        <span>${owned ? `${icon(zoneCatalog.find((zone) => zone.id === card.zone)?.icon || "sprout")} ${cardZoneLabel(card)}` : "小任務島"}</span>
+        <strong>${owned ? (mission?.status === "unlocked" ? "能力解鎖" : `Lv.${owned.level || 1}`) : "等待發現"}</strong>
+      </div>
+      ${owned && mission && mission.status !== "unlocked" ? `<button class="button primary card-action" onclick="viewSkillMission('${mission.id}')">開始能力任務</button>` : ""}
     </article>
   `;
 }
@@ -2921,9 +2977,10 @@ function overviewTab() {
                 ? latestCards
                     .map(
                       (card) => `
-                        <article class="mini-collection-card ${card.rarity}">
-                          <div class="card-icon">${icon(card.icon)}</div>
+                        <article class="mini-collection-card card-type-${card.type} zone-${card.zone} ${card.rarity}">
+                          ${cardArtwork(card)}
                           <div>
+                            <span class="card-series">${cardSeriesMark(card.type)} ${typeLabel(card.type)}</span>
                             <h3>${card.name}</h3>
                             <p class="muted">${typeLabel(card.type)} · ${card.fact}</p>
                           </div>
