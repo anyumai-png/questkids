@@ -673,6 +673,14 @@ function collectionCards(childId = selectedChild()?.id) {
 function openCardPack() {
   const child = selectedChild();
   if (!child || (child.stars || 0) < 3) return;
+  state.cardReveal = { phase: "pack" };
+  saveState();
+  render();
+}
+
+function revealCardPack() {
+  const child = selectedChild();
+  if (!child || (child.stars || 0) < 3) return;
   child.stars -= 3;
   const owned = ownedCardIds(child.id);
   const unowned = cardCatalog.filter((card) => !owned.has(card.id));
@@ -690,7 +698,7 @@ function openCardPack() {
     state.collection.push(entry);
     if (card.type === "skill" && card.skillMission) createSkillMission(child.id, card);
   }
-  state.cardReveal = { cardId: card.id, duplicate, level: entry.level };
+  state.cardReveal = { phase: "reveal", cardId: card.id, duplicate, level: entry.level };
   saveState();
   render();
 }
@@ -907,6 +915,7 @@ function render() {
 
 function cardRevealModal() {
   const reveal = state.cardReveal;
+  if (reveal?.phase === "pack") return cardPackOpeningModal();
   const card = cardCatalog.find((item) => item.id === reveal.cardId);
   return `
     <div class="modal-backdrop card-reveal-backdrop" role="dialog" aria-modal="true" aria-labelledby="card-title">
@@ -932,6 +941,44 @@ function cardRevealModal() {
         <div class="row">
           <button class="button primary" onclick="viewRevealedCard()">去圖鑑看看</button>
           <button class="button" onclick="closeCardReveal()">收好</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function cardPackOpeningModal() {
+  const child = selectedChild();
+  const ownedCount = collectionFor(child?.id).length;
+  return `
+    <div class="modal-backdrop card-reveal-backdrop" role="dialog" aria-modal="true" aria-labelledby="pack-title">
+      <div class="modal card-modal pack-modal unopened-pack">
+        <div class="pack-burst soft" aria-hidden="true"></div>
+        <span class="tag">${icon("card")} 任務卡包</span>
+        <div class="pack-stage">
+          <div class="pack-envelope" aria-hidden="true">
+            <span>${icon("card")}</span>
+            <i>${icon("star")}</i>
+          </div>
+          <div>
+            <h2 id="pack-title">打開一包新發現</h2>
+            <p class="muted">會出現一張收藏卡，可能是夥伴、動物圖鑑、能力卡、名勝或美食。</p>
+          </div>
+        </div>
+        <div class="pack-pool">
+          <strong>透明卡池</strong>
+          <div>
+            <span>情緒小夥伴</span>
+            <span>動物圖鑑</span>
+            <span>能力卡</span>
+            <span>名勝</span>
+            <span>美食</span>
+          </div>
+        </div>
+        <p class="muted">已發現 ${ownedCount}/${cardCatalog.length}。沒有失敗卡，每次都會讓圖鑑多一點進度。</p>
+        <div class="row">
+          <button class="button primary large" onclick="revealCardPack()">打開卡包</button>
+          <button class="button" onclick="closeCardReveal()">稍後再開</button>
         </div>
       </div>
     </div>
