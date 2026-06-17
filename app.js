@@ -2178,10 +2178,25 @@ function questView() {
         <div class="panel">
           <div class="section-title">
             <div>
-              <h2>只做下一小步</h2>
-              <p class="muted">點一張小卡，完成一步就會亮起。</p>
+              <h2>準備開始小任務</h2>
+              <p class="muted">先啟動計時，再逐張完成小卡。</p>
             </div>
             <span class="tag">+${task.xp} XP</span>
+          </div>
+          <div class="quest-flow-guide" aria-label="任務流程">
+            <span class="${questTimerStarted() ? "done" : "active"}"><b>${questTimerStarted() ? "✓" : "1"}</b>開始計時</span>
+            <i>›</i>
+            <span class="${completedSteps.length ? "done" : questTimerStarted() ? "active" : ""}"><b>${completedSteps.length ? "✓" : "2"}</b>完成小卡</span>
+            <i>›</i>
+            <span><b>3</b>完成任務</span>
+          </div>
+          ${timerPanel(task, child, completedSteps.length)}
+          <div class="quest-steps-heading">
+            <div>
+              <span class="tag">${icon("spark")} 小步驟</span>
+              <h3>只做下一小步</h3>
+            </div>
+            <span>${completedSteps.length}/${steps.length}</span>
           </div>
           <div class="quest-step-map" aria-label="小任務步驟">
             ${steps
@@ -2200,7 +2215,15 @@ function questView() {
               )
               .join("")}
           </div>
-          ${timerPanel(task, child)}
+          ${
+            completedSteps.length && !questTimerStarted()
+              ? `<button class="timer-reminder" onclick="startTimer(${timerSecondsForTask(task, child)})">
+                  <span>${icon("timer")}</span>
+                  <strong>小卡已完成，記得開始計時</strong>
+                  <small>按這裡啟動專注時間</small>
+                </button>`
+              : ""
+          }
           <div class="row">
             <button class="button primary large" onclick="completeTask('${task.id}')">完成任務</button>
             <button class="button" onclick="changeQuestMethod()">換一種方法</button>
@@ -2265,22 +2288,37 @@ function toggleStep(taskId, index) {
   render();
 }
 
-function timerPanel(task, child) {
+function questTimerStarted() {
+  const total = state.timer.totalSeconds || 0;
+  const left = state.timer.secondsLeft || total;
+  return state.timer.running || (total > 0 && left < total);
+}
+
+function timerPanel(task, child, completedStepCount = 0) {
   const suggestedSeconds = timerSecondsForTask(task, child);
   const total = state.timer.totalSeconds || suggestedSeconds;
   const left = state.timer.secondsLeft || total;
   const pct = total ? Math.round(((total - left) / total) * 100) : 0;
+  const started = questTimerStarted();
   return `
-    <div class="panel" style="margin:16px 0 0">
-      <div class="timer" data-timer-ring style="--timer:${pct}%">
+    <section class="quest-timer-panel ${started ? "started" : ""}">
+      <div class="quest-timer-copy">
+        <span class="tag">${started ? (state.timer.running ? "正在專注" : "已暫停") : "第一步"}</span>
+        <h3>${started ? (state.timer.running ? "計時進行中" : "休息後可以繼續") : "先按開始計時"}</h3>
+        <p>${started ? `已完成 ${completedStepCount} 張小卡，慢慢做就可以。` : "計時開始後，再點下面的小卡記錄每一步。"}</p>
+      </div>
+      <div class="timer compact" data-timer-ring style="--timer:${pct}%">
         <strong data-timer-display>${formatSeconds(left)}</strong>
       </div>
-      <div class="row" style="justify-content:center">
-        <button class="button primary" onclick="startTimer(${suggestedSeconds})">開始計時</button>
-        <button class="button" onclick="pauseTimer()">暫停</button>
-        <button class="button" onclick="resetTimer(${suggestedSeconds})">重設</button>
+      <div class="quest-timer-actions">
+        ${
+          state.timer.running
+            ? `<button class="button timer-main-action" onclick="pauseTimer()">Ⅱ 暫停</button>`
+            : `<button class="button primary timer-main-action" onclick="startTimer(${suggestedSeconds})">${started ? "繼續計時" : `${icon("timer")} 開始計時`}</button>`
+        }
+        <button class="button timer-reset-action" onclick="resetTimer(${suggestedSeconds})" aria-label="重設計時">↻</button>
       </div>
-    </div>
+    </section>
   `;
 }
 
@@ -2464,6 +2502,18 @@ function finalizeTask(taskId) {
 function completeTask(taskId) {
   const stepsDone = getQuestSteps(taskId).length;
   const elapsed = (state.timer.totalSeconds || 0) - (state.timer.secondsLeft || 0);
+  if (!isDoneToday(taskId) && elapsed === 0) {
+    state.pendingConfirm = {
+      action: "force-complete",
+      taskId,
+      title: "還未開始計時",
+      body: stepsDone
+        ? "你已經完成小卡了。下次可以先按「開始計時」，讓 Lumo 陪你記錄專注時間。確定今次已完成任務嗎？"
+        : "先按「開始計時」，再試做第一張小卡，會更清楚自己完成了多少。確定今次已完成任務嗎？",
+    };
+    render();
+    return;
+  }
   if (!isDoneToday(taskId) && stepsDone === 0 && elapsed < 30) {
     state.pendingConfirm = {
       action: "force-complete",
