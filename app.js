@@ -681,6 +681,40 @@ function collectionCards(childId = selectedChild()?.id) {
   }));
 }
 
+function nextPackPreviewCards(childId = selectedChild()?.id, limit = 3) {
+  const owned = ownedCardIds(childId);
+  const unowned = cardCatalog.filter((card) => !owned.has(card.id));
+  const source = unowned.length ? unowned : cardCatalog;
+  const preferredTypes = ["skill", "place", "pet", "item", "food", "deco"];
+  const picked = [];
+  preferredTypes.forEach((type) => {
+    const card = source.find((item) => item.type === type && !picked.some((pickedCard) => pickedCard.id === item.id));
+    if (card && picked.length < limit) picked.push(card);
+  });
+  source.forEach((card) => {
+    if (picked.length < limit && !picked.some((pickedCard) => pickedCard.id === card.id)) picked.push(card);
+  });
+  return picked;
+}
+
+function packPreviewStrip(childId = selectedChild()?.id) {
+  return `
+    <div class="pack-preview-strip" aria-label="下一包可能遇見的收藏">
+      ${nextPackPreviewCards(childId)
+        .map(
+          (card) => `
+            <article class="pack-preview-card ${card.type}">
+              <span>${icon(card.icon)}</span>
+              <strong>${typeLabel(card.type)}</strong>
+              <small>${card.type === "skill" ? "能力任務" : cardZoneLabel(card)}</small>
+            </article>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
 function openCardPack() {
   const child = selectedChild();
   if (!child || (child.stars || 0) < 3) return;
@@ -815,6 +849,15 @@ function cardTypeNudge(card) {
     food: "美食卡會收藏不同地方的小知識。",
   };
   return copy[card.type] || "新的收藏已加入圖鑑。";
+}
+
+function cardRevealActionCopy(card, duplicate) {
+  if (duplicate) return "同一張卡會升級，代表你和它更熟了。";
+  if (card.type === "skill") return "這張能力卡已變成一個可以練習的小任務。";
+  if (card.type === "place") return "新名勝會放入圖鑑，慢慢認識世界。";
+  if (card.type === "pet") return "新夥伴會在島上陪你開始下一步。";
+  if (card.type === "food") return "新美食會加入圖鑑，收藏一個地方的小知識。";
+  return "新收藏會讓小島多一個故事。";
 }
 
 function icon(name) {
@@ -971,11 +1014,16 @@ function cardRevealModal() {
             <span>${icon(zoneCatalog.find((zone) => zone.id === card.zone)?.icon || "sprout")} ${cardZoneLabel(card)}</span>
             <span>Lv.${reveal.level}</span>
           </div>
+          <div class="card-next-step">
+            <strong>${reveal.duplicate ? "卡片升級" : "下一步"}</strong>
+            <span>${cardRevealActionCopy(card, reveal.duplicate)}</span>
+          </div>
           <p class="fact-box">小知識：${card.fact}</p>
           <p class="card-nudge">${cardTypeNudge(card)}</p>
           ${card.type === "skill" && !reveal.duplicate ? `<p class="notice">已加入「能力任務」。完成練習後，這張能力卡就會真正解鎖。</p>` : ""}
         </div>
         <div class="row">
+          ${card.type === "skill" && !reveal.duplicate ? `<button class="button primary" onclick="viewRevealedSkillMission('${card.id}')">開始能力任務</button>` : ""}
           <button class="button primary" onclick="viewRevealedCard()">去圖鑑看看</button>
           <button class="button" onclick="closeCardReveal()">收好</button>
         </div>
@@ -1012,6 +1060,7 @@ function cardPackOpeningModal() {
             <span>美食</span>
           </div>
         </div>
+        ${packPreviewStrip(child?.id)}
         <p class="muted">已發現 ${ownedCount}/${cardCatalog.length}。沒有失敗卡，每次都會讓圖鑑多一點進度。</p>
         <div class="row">
           <button class="button primary large" onclick="revealCardPack()">打開卡包</button>
@@ -1032,6 +1081,20 @@ function viewRevealedCard() {
   state.cardReveal = null;
   state.route = "kid";
   state.kidTab = "collection";
+  saveState();
+  render();
+}
+
+function viewRevealedSkillMission(cardId) {
+  const child = selectedChild();
+  const mission = state.skillMissions.find((item) => item.childId === child?.id && item.cardId === cardId);
+  state.cardReveal = null;
+  if (mission) {
+    viewSkillMission(mission.id);
+    return;
+  }
+  state.route = "kid";
+  state.kidTab = "achievements";
   saveState();
   render();
 }
@@ -1625,6 +1688,7 @@ function kidIslandView({ child, tasks, rate, mood }) {
           <span>${icon("tower")} 名勝</span>
           <span>${icon("shoe")} 能力</span>
         </div>
+        ${packPreviewStrip(child.id)}
       </div>
       <div class="pack-box">
         <div class="pack-art">${icon("card")}</div>

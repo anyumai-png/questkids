@@ -3034,6 +3034,88 @@ p {
   font-weight: 900;
 }
 
+.pack-preview-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.pack-preview-card {
+  position: relative;
+  display: grid;
+  min-height: 92px;
+  align-content: space-between;
+  gap: 5px;
+  overflow: hidden;
+  border: 1px solid rgba(35, 48, 40, 0.08);
+  border-radius: 18px;
+  padding: 10px;
+  background:
+    radial-gradient(circle at 84% 16%, rgba(255, 255, 255, 0.88), transparent 3.6rem),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.9), rgba(223, 245, 220, 0.62));
+  box-shadow: 0 10px 22px rgba(35, 48, 40, 0.08);
+}
+
+.pack-preview-card::after {
+  position: absolute;
+  right: -18px;
+  bottom: -24px;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: rgba(242, 189, 58, 0.2);
+  content: "";
+}
+
+.pack-preview-card span {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 22px;
+}
+
+.pack-preview-card strong,
+.pack-preview-card small {
+  position: relative;
+  z-index: 1;
+}
+
+.pack-preview-card strong {
+  color: #173328;
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+.pack-preview-card small {
+  color: #5d6e66;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pack-preview-card.skill {
+  background:
+    radial-gradient(circle at 84% 16%, rgba(255, 255, 255, 0.88), transparent 3.6rem),
+    linear-gradient(160deg, rgba(255, 250, 230, 0.94), rgba(255, 230, 170, 0.58));
+}
+
+.pack-preview-card.place {
+  background:
+    radial-gradient(circle at 84% 16%, rgba(255, 255, 255, 0.88), transparent 3.6rem),
+    linear-gradient(160deg, rgba(232, 244, 255, 0.96), rgba(217, 239, 255, 0.72));
+}
+
+.pack-preview-card.pet {
+  background:
+    radial-gradient(circle at 84% 16%, rgba(255, 255, 255, 0.88), transparent 3.6rem),
+    linear-gradient(160deg, rgba(255, 247, 232, 0.96), rgba(255, 223, 223, 0.58));
+}
+
 .pack-art {
   display: grid;
   width: 86px;
@@ -3149,6 +3231,29 @@ p {
   color: var(--ink);
   background: rgba(255, 255, 255, 0.68);
   font-size: 13px;
+}
+
+.card-next-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid rgba(242, 189, 58, 0.34);
+  border-radius: 18px;
+  padding: 11px 12px;
+  color: #173328;
+  background:
+    radial-gradient(circle at 92% 12%, rgba(255, 255, 255, 0.84), transparent 4rem),
+    #fff0bf;
+  font-size: 13px;
+}
+
+.card-next-step strong {
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
 }
 
 .skill-card {
@@ -3276,6 +3381,8 @@ p {
 }
 
 .card-reveal-backdrop {
+  align-items: start;
+  overflow-y: auto;
   background:
     radial-gradient(circle at 50% 18%, rgba(242, 189, 58, 0.42), transparent 12rem),
     rgba(13, 42, 34, 0.72);
@@ -3289,8 +3396,10 @@ p {
 
 .pack-modal {
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   width: min(430px, 100%);
+  max-height: calc(100vh - 36px);
   border: 1px solid rgba(255, 255, 255, 0.48);
   border-radius: 28px;
   background:
@@ -3521,8 +3630,8 @@ p {
 .card-portrait {
   position: relative;
   display: grid;
-  min-height: 150px;
-  margin: 16px 0 12px;
+  min-height: 126px;
+  margin: 12px 0 10px;
   place-items: center;
   border-radius: 24px;
   background:
@@ -3532,11 +3641,11 @@ p {
 }
 
 .collectible-card.reveal .card-icon {
-  width: 110px;
-  height: 110px;
+  width: 96px;
+  height: 96px;
   margin: 0;
   border-radius: 32px;
-  font-size: 58px;
+  font-size: 52px;
   box-shadow: 0 18px 36px rgba(35, 48, 40, 0.12);
 }
 
