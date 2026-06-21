@@ -3187,30 +3187,58 @@ function overviewTab() {
   const rate = todayCompletionRate(child.id);
   const tasks = childTasks(child.id);
   const week = weeklyStats(child.id);
-  const insight = buildInsight(child.id);
   const mood = latestMoodFor(child.id);
   const openSkillMissions = activeSkillMissionCount(child.id);
   const latestCards = latestUnlockedCards(child.id);
   const doneToday = tasks.filter((task) => isDoneToday(task.id)).length;
+  const remainingTasks = tasks.filter((task) => !isDoneToday(task.id));
+  const nextTask = remainingTasks[0] || null;
+  const support = parentSupportSuggestion(child, mood, nextTask, rate);
   return `
     <div class="parent-shell">
-      <section class="parent-summary-card">
-        <div class="parent-summary-copy">
+      <section class="parent-focus-board">
+        <div class="parent-focus-main">
           <div>
-            <span class="tag">${icon("heart")} 今日焦點</span>
+            <span class="tag">${icon("heart")} 今天怎樣陪</span>
             <h2>${esc(child.name)} 今天已完成 ${doneToday}/${tasks.length} 個任務</h2>
-            <p>${insight}</p>
+            <p>${support.summary}</p>
           </div>
-          <div class="profile-chip-row">
-            <span class="small-tag">${icon("water")} ${mood ? mood.label : "未記錄今日心情"}</span>
-            <span class="small-tag">${icon("sprout")} ${openSkillMissions} 個能力任務進行中</span>
-            <span class="small-tag">${icon("card")} ${collectionFor(child.id).length} 張收藏</span>
+          <div class="parent-focus-signal">
+            ${moodFace(mood, "large")}
+            <div>
+              <span>孩子現在</span>
+              <strong>${mood ? mood.label : "未記錄心情"}</strong>
+              <small>${support.moodNote}</small>
+            </div>
+          </div>
+          <div class="parent-say-card">
+            <span class="parent-voice-mark">${icon("heart")}</span>
+            <div>
+              <span>可以這樣說</span>
+              <blockquote>「${support.phrase}」</blockquote>
+            </div>
+          </div>
+          <div class="parent-focus-actions">
+            <button class="button primary" onclick="${nextTask ? `startTaskFromParent('${nextTask.id}')` : "go('kid')"}">${nextTask ? `陪他開始「${esc(nextTask.title)}」` : "看看孩子的小島"}</button>
+            <button class="button" onclick="setParentTab('tasks')">調整今日任務</button>
+            <button class="button" onclick="setParentTab('analysis')">查看拖延分析</button>
           </div>
         </div>
-        <div class="parent-summary-actions">
-          <button class="button primary" onclick="setParentTab('tasks')">調整今日任務</button>
-          <button class="button" onclick="setParentTab('analysis')">查看分析</button>
-        </div>
+        <aside class="parent-focus-side">
+          <div class="parent-day-ring" style="--value:${rate}%">
+            <strong>${rate}%</strong>
+            <span>今日完成</span>
+          </div>
+          <div class="parent-next-step">
+            <span class="tag">下一步</span>
+            <strong>${nextTask ? esc(nextTask.title) : "今日任務已完成"}</strong>
+            <p>${nextTask ? `${nextTask.minutes} 分鐘 · 先做「${esc(firstStepForTask(nextTask))}」` : "可以讓孩子休息，或一起看看新收藏。"}</p>
+          </div>
+          <div class="parent-focus-tags">
+            <span>${icon("sprout")} ${openSkillMissions} 個能力任務</span>
+            <span>${icon("card")} ${collectionFor(child.id).length} 張收藏</span>
+          </div>
+        </aside>
       </section>
 
       <section class="parent-metrics-grid">
@@ -3303,6 +3331,42 @@ function buildInsight(childId) {
   const topType = Object.entries(byType).sort((a, b) => b[1] - a[1])[0]?.[0] || "activation";
   const type = delayTypes.find((item) => item.id === topType);
   return `${esc(child.name)} 最近較常使用「${type.title}」策略。下一步可以固定在任務前先說一句家長話術，再開一個短計時。`;
+}
+
+function parentSupportSuggestion(child, mood, nextTask, rate) {
+  if (rate === 100) {
+    return {
+      summary: `${esc(child.name)} 今天已完成所有任務。現在最重要的是讓努力被看見，而不是立即加新要求。`,
+      moodNote: "今天可以用欣賞代替提醒。",
+      phrase: "我看到你今天一步一步做完了，謝謝你有照顧好自己的任務。",
+    };
+  }
+  if (mood?.id === "worry" || mood?.id === "resist") {
+    return {
+      summary: `${esc(child.name)} 現在需要先降低壓力。把任務縮成一個看得見的小動作，通常會比再解釋一次更容易開始。`,
+      moodNote: "先安定，再處理任務。",
+      phrase: nextTask ? `你不用現在做完，我陪你先做「${firstStepForTask(nextTask)}」。` : "你現在不想做也可以，我先陪你休息一下。",
+    };
+  }
+  if (!mood) {
+    return {
+      summary: `今天還未知道 ${esc(child.name)} 的狀態。先問感受，再決定用短計時還是暖身任務。`,
+      moodNote: "先問一句，不急著催促。",
+      phrase: "你現在比較有精神，還是想先慢慢開始？",
+    };
+  }
+  return {
+    summary: nextTask
+      ? `${esc(child.name)} 可以繼續今天的節奏。下一個任務只突出第一步，避免一次看見太多要求。`
+      : `${esc(child.name)} 今天暫時沒有待完成任務，可以把注意力放在休息和肯定。`,
+    moodNote: "保持短而清楚的提醒。",
+    phrase: nextTask ? `我們先做「${firstStepForTask(nextTask)}」，完成後再決定下一步。` : "今天已經做得很好，我看到你的努力。",
+  };
+}
+
+function startTaskFromParent(taskId) {
+  state.settings.parentVerified = false;
+  startTask(taskId);
 }
 
 function latestMoodFor(childId = selectedChild()?.id) {
