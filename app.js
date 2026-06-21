@@ -129,6 +129,13 @@ const badgeCatalog = [
   { id: "weekly_try", name: "回來繼續", rule: "連續 7 天有完成任務", icon: "lighthouse" },
 ];
 
+const parentMessagePresets = [
+  "我看到你願意開始，這已經很不容易。",
+  "不用急著做完，我陪你慢慢做第一步。",
+  "今天辛苦了，完成一點點也值得被看見。",
+  "遇到困難可以叫我，我不是來催你的。",
+];
+
 const cardCatalog = [
   {
     id: "pet_lumo",
@@ -553,6 +560,7 @@ const demoState = () => {
     ],
     skillMissions: [],
     moodLog: [],
+    parentMessages: [],
     rewards: [
       { id: uid("reward"), title: "親子桌遊 15 分鐘", cost: 80 },
       { id: uid("reward"), title: "選一本睡前故事", cost: 40 },
@@ -606,7 +614,7 @@ function migrateState(saved) {
   if (!merged.settings.parentPin) merged.settings.parentPin = "1234";
   if (typeof merged.settings.parentVerified !== "boolean") merged.settings.parentVerified = false;
   if (typeof merged.settings.parentPinInput !== "string") merged.settings.parentPinInput = "";
-  for (const key of ["children", "tasks", "completions", "collection", "skillMissions", "moodLog", "rewards"]) {
+  for (const key of ["children", "tasks", "completions", "collection", "skillMissions", "moodLog", "parentMessages", "rewards"]) {
     if (!Array.isArray(merged[key])) merged[key] = base[key];
   }
   if (!merged.children.length) return demoState();
@@ -633,11 +641,15 @@ function selectedChild() {
 }
 
 function childTasks(childId = selectedChild()?.id) {
-  return state.tasks.filter((task) => task.childId === childId && task.active);
+  return allChildTasks(childId).filter((task) => task.active);
+}
+
+function allChildTasks(childId = selectedChild()?.id) {
+  return state.tasks.filter((task) => task.childId === childId);
 }
 
 function completionsFor(childId = selectedChild()?.id) {
-  const taskIds = new Set(childTasks(childId).map((task) => task.id));
+  const taskIds = new Set(allChildTasks(childId).map((task) => task.id));
   return state.completions.filter((item) => taskIds.has(item.taskId));
 }
 
@@ -1801,11 +1813,60 @@ function kidView() {
         <div class="coin-chip">${icon("star")} ${child.xp || 0}</div>
       </div>
       ${(state.kidTab || "island") === "island" ? `<div class="daily-nudge">${icon("star")} <span>你今天已經做得很好，繼續一步一步來！</span></div>` : ""}
+      ${(state.kidTab || "island") === "island" ? kidParentMessage(child) : ""}
       ${state.kidTab === "achievements" ? kidAchievementsView({ child, badges, skillMissions, streak }) : ""}
       ${state.kidTab === "collection" ? kidCollectionView({ child, ownedCards }) : ""}
       ${(state.kidTab || "island") === "island" ? kidIslandView({ child, tasks, rate, mood }) : ""}
     </section>
   `;
+}
+
+function latestParentMessage(childId = selectedChild()?.id) {
+  return [...state.parentMessages]
+    .filter((message) => message.childId === childId)
+    .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))[0] || null;
+}
+
+function kidParentMessage(child) {
+  const message = latestParentMessage(child.id);
+  if (!message) return "";
+  return `
+    <section class="kid-parent-message ${message.readAt ? "read" : "new"}">
+      <div class="parent-message-avatar">${icon("heart")}</div>
+      <div class="parent-message-copy">
+        <span>${message.readAt ? "家長的心聲" : "家長有句話給你"}</span>
+        <blockquote>「${esc(message.text)}」</blockquote>
+        <small>${message.readAt ? "已聽過" : "按一下聽聽家長的說話"}</small>
+      </div>
+      <div class="parent-message-actions">
+        <button type="button" onclick="listenParentMessage('${message.id}')">▶</button>
+        ${message.readAt ? "" : `<button type="button" onclick="markParentMessageRead('${message.id}')" aria-label="收好家長心聲">✓</button>`}
+      </div>
+    </section>
+  `;
+}
+
+function markParentMessageRead(messageId) {
+  const message = state.parentMessages.find((item) => item.id === messageId);
+  if (!message) return;
+  message.readAt = message.readAt || new Date().toISOString();
+  saveState();
+  render();
+}
+
+function listenParentMessage(messageId) {
+  const message = state.parentMessages.find((item) => item.id === messageId);
+  if (!message) return;
+  message.readAt = message.readAt || new Date().toISOString();
+  saveState();
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(message.text);
+    utterance.lang = "zh-HK";
+    utterance.rate = 0.92;
+    window.speechSynthesis.speak(utterance);
+  }
+  render();
 }
 
 function clockParts(date = new Date()) {
@@ -3241,6 +3302,8 @@ function overviewTab() {
         </aside>
       </section>
 
+      ${parentMessageComposer(child)}
+
       <section class="parent-metrics-grid">
         ${parentMetricCard("今日完成率", `${rate}%`, `${doneToday}/${tasks.length} 個任務完成`, "gold")}
         ${parentMetricCard("本週完成", week.total, "過去 7 天的總完成次數", "mint")}
@@ -3333,6 +3396,70 @@ function buildInsight(childId) {
   return `${esc(child.name)} 最近較常使用「${type.title}」策略。下一步可以固定在任務前先說一句家長話術，再開一個短計時。`;
 }
 
+function parentMessageComposer(child) {
+  const latest = latestParentMessage(child.id);
+  return `
+    <section class="parent-message-composer">
+      <div class="parent-message-intro">
+        <span class="tag">${icon("heart")} 給孩子一個心聲</span>
+        <h2>讓 ${esc(child.name)} 聽見支持，不只是提醒</h2>
+        <p>訊息會出現在孩子的小島，可由裝置讀出。每次只保留最新一句在首頁。</p>
+        ${
+          latest
+            ? `<div class="parent-message-status">
+                <span>${latest.readAt ? "✓ 已被孩子收好" : "等待孩子閱讀"}</span>
+                <blockquote>「${esc(latest.text)}」</blockquote>
+              </div>`
+            : ""
+        }
+      </div>
+      <form class="parent-message-form" onsubmit="sendParentMessage(event)">
+        <div class="message-preset-grid">
+          ${parentMessagePresets
+            .map(
+              (message, index) => `
+                <button type="button" onclick="chooseParentMessagePreset(${index})">${esc(message)}</button>
+              `,
+            )
+            .join("")}
+        </div>
+        <label>
+          <span>你的說話</span>
+          <textarea id="parent-message-input" name="message" maxlength="90" placeholder="例如：我看到你剛才有努力開始。"></textarea>
+        </label>
+        <div class="parent-message-form-footer">
+          <small>只保存在這部裝置 · 最多 90 字</small>
+          <button class="button primary" type="submit">${icon("heart")} 送到孩子的小島</button>
+        </div>
+      </form>
+    </section>
+  `;
+}
+
+function chooseParentMessagePreset(index) {
+  const input = document.querySelector("#parent-message-input");
+  if (!input || !parentMessagePresets[index]) return;
+  input.value = parentMessagePresets[index];
+  input.focus();
+}
+
+function sendParentMessage(event) {
+  event.preventDefault();
+  const child = selectedChild();
+  const input = event.target.querySelector('[name="message"]');
+  const text = (input?.value || "").trim().slice(0, 90);
+  if (!child || !text) return;
+  state.parentMessages.push({
+    id: uid("message"),
+    childId: child.id,
+    text,
+    createdAt: new Date().toISOString(),
+    readAt: null,
+  });
+  saveState();
+  render();
+}
+
 function parentSupportSuggestion(child, mood, nextTask, rate) {
   if (rate === 100) {
     return {
@@ -3393,7 +3520,9 @@ function narratorParentLine(child) {
   const mood = latestMoodFor(child?.id);
   const activeTask = state.tasks.find((task) => task.id === state.activeTaskId);
   const type = delayTypes.find((item) => item.id === state.activeDelayType) || delayTypes[0];
+  const message = latestParentMessage(child?.id);
   if (state.taskCelebration) return `家長心聲：我看到你剛剛真的有努力，不是只想趕你做完。`;
+  if (message && !message.readAt) return `家長心聲：${esc(message.text)}`;
   if (activeTask && state.route === "quest") {
     return `家長心聲：${esc(type.parentScript.replace("{firstStep}", activeTask.steps?.[0] || "把第一樣東西拿出來"))}`;
   }
@@ -3498,16 +3627,27 @@ function parentZoneCard(zone) {
   `;
 }
 
-function parentTaskRow(task) {
+function parentTaskRow(task, index, total) {
   const done = isDoneToday(task.id);
   return `
-    <article class="parent-task-row ${done ? "done" : ""}">
+    <article class="parent-task-row ${done ? "done" : ""} ${task.active ? "" : "inactive"}">
+      <div class="task-order-number">${index + 1}</div>
       <div class="task-icon">${done ? "OK" : icon(task.icon)}</div>
-      <div>
-        <h3>${esc(task.title)}</h3>
+      <div class="parent-task-copy">
+        <div class="parent-task-title-line">
+          <h3>${esc(task.title)}</h3>
+          <span class="small-tag">${done ? "今天已完成" : `+${task.xp} XP`}</span>
+        </div>
         <p class="muted">${esc(task.area)} · ${task.minutes} 分鐘 · ${task.steps?.length || 3} 個小步驟</p>
+        <label class="task-active-toggle">
+          <input type="checkbox" ${task.active ? "checked" : ""} onchange="toggleTaskActive('${task.id}')" />
+          <span>${task.active ? "今天顯示" : "已暫停安排"}</span>
+        </label>
       </div>
-      <span class="small-tag">${done ? "今天已完成" : `+${task.xp} XP`}</span>
+      <div class="task-order-actions" aria-label="調整任務次序">
+        <button type="button" onclick="moveTask('${task.id}', -1)" aria-label="將${esc(task.title)}上移" ${index === 0 ? "disabled" : ""}>↑</button>
+        <button type="button" onclick="moveTask('${task.id}', 1)" aria-label="將${esc(task.title)}下移" ${index === total - 1 ? "disabled" : ""}>↓</button>
+      </div>
     </article>
   `;
 }
@@ -3685,8 +3825,33 @@ function updateChildTimer(event) {
 
 function tasksTab() {
   const child = selectedChild();
+  const tasks = allChildTasks(child.id);
+  const activeTasks = tasks.filter((task) => task.active);
+  const activeMinutes = activeTasks.reduce((sum, task) => sum + Number(task.minutes || 0), 0);
+  const completed = activeTasks.filter((task) => isDoneToday(task.id)).length;
   return `
     <div class="parent-shell">
+      <section class="task-plan-summary">
+        <div class="task-plan-heading">
+          <span class="tag">${icon("star")} 今日安排</span>
+          <h2>先排好順序，孩子只需要看見下一步</h2>
+          <p>拖動感覺不清楚時，可用箭嘴調整先後；暫停的任務會保留資料，但不會出現在孩子今天的小島。</p>
+        </div>
+        <div class="task-plan-metrics">
+          <article>
+            <strong>${activeTasks.length}</strong>
+            <span>今日任務</span>
+          </article>
+          <article>
+            <strong>${activeMinutes}</strong>
+            <span>預計分鐘</span>
+          </article>
+          <article>
+            <strong>${completed}/${activeTasks.length}</strong>
+            <span>今天完成</span>
+          </article>
+        </div>
+      </section>
       <section class="parent-grid-2">
         <div class="parent-panel">
           <div class="section-title">
@@ -3694,10 +3859,10 @@ function tasksTab() {
               <span class="tag">${icon("book")} 任務管理</span>
               <h2>${esc(child.name)} 的任務節奏</h2>
             </div>
-            <span class="small-tag">${childTasks(child.id).length} 個任務</span>
+            <span class="small-tag">${activeTasks.length}/${tasks.length} 個啟用</span>
           </div>
           <div class="parent-task-list">
-            ${childTasks(child.id).map(parentTaskRow).join("") || `<div class="empty">未有任務。</div>`}
+            ${tasks.map((task, index) => parentTaskRow(task, index, tasks.length)).join("") || `<div class="empty">未有任務。</div>`}
           </div>
         </div>
       <form class="parent-panel form" data-magic-preview-form onsubmit="addTask(event)">
@@ -3728,6 +3893,30 @@ function tasksTab() {
       </section>
     </div>
   `;
+}
+
+function moveTask(taskId, direction) {
+  const child = selectedChild();
+  const childTaskIndexes = state.tasks
+    .map((task, index) => ({ task, index }))
+    .filter(({ task }) => task.childId === child?.id)
+    .map(({ index }) => index);
+  const currentPosition = childTaskIndexes.findIndex((index) => state.tasks[index].id === taskId);
+  const nextPosition = currentPosition + Number(direction);
+  if (currentPosition < 0 || nextPosition < 0 || nextPosition >= childTaskIndexes.length) return;
+  const currentIndex = childTaskIndexes[currentPosition];
+  const nextIndex = childTaskIndexes[nextPosition];
+  [state.tasks[currentIndex], state.tasks[nextIndex]] = [state.tasks[nextIndex], state.tasks[currentIndex]];
+  saveState();
+  render();
+}
+
+function toggleTaskActive(taskId) {
+  const task = state.tasks.find((item) => item.id === taskId);
+  if (!task) return;
+  task.active = !task.active;
+  saveState();
+  render();
 }
 
 function addTask(event) {
