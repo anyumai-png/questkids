@@ -1305,9 +1305,14 @@ function selectMapZone(zoneId) {
 }
 
 function setMapZoom(nextZoom) {
-  state.mapZoom = Math.max(0.92, Math.min(1.22, Number(nextZoom) || 1));
+  const roundedZoom = Math.round((Number(nextZoom) || 1) * 10) / 10;
+  state.mapZoom = Math.max(0.9, Math.min(1.2, roundedZoom));
   saveState();
   render();
+}
+
+function mapZoomLabel(zoom) {
+  return Number(zoom) === 1 ? "1x" : `${Number(zoom).toFixed(1)}x`;
 }
 
 function toggleKidTaskExpanded() {
@@ -1668,7 +1673,7 @@ function islandMap(options = {}) {
   const child = selectedChild();
   const zones = child ? zoneStats(child.id) : zoneCatalog.map((zone) => ({ ...zone, total: 0, done: 0, progress: 0 }));
   const overall = child ? todayCompletionRate(child.id) : 0;
-  const zoom = Number(state.mapZoom || 1);
+  const zoom = Math.max(0.9, Math.min(1.2, Math.round(Number(state.mapZoom || 1) * 10) / 10));
   const canvasWidth = Math.round(760 * zoom);
   const canvasHeight = Math.round(560 * zoom);
   const focusedZone = state.kidZoneFocus ? zones.find((zone) => zone.id === state.kidZoneFocus) : null;
@@ -1678,9 +1683,9 @@ function islandMap(options = {}) {
       <div class="map-toolbar" aria-label="地圖操作">
         <span>${icon("spark")} 拖動地圖探索</span>
         <div class="map-zoom">
-          <button type="button" onclick="setMapZoom(${(zoom - 0.1).toFixed(2)})" aria-label="縮小地圖">−</button>
-          <button type="button" onclick="setMapZoom(1)" aria-label="重設地圖">1x</button>
-          <button type="button" onclick="setMapZoom(${(zoom + 0.1).toFixed(2)})" aria-label="放大地圖">+</button>
+          <button type="button" onclick="setMapZoom(${(zoom - 0.1).toFixed(1)})" aria-label="縮小地圖" ${zoom <= 0.9 ? "disabled" : ""}>−</button>
+          <button type="button" onclick="setMapZoom(1)" aria-label="重設地圖，目前倍率 ${mapZoomLabel(zoom)}">${mapZoomLabel(zoom)}</button>
+          <button type="button" onclick="setMapZoom(${(zoom + 0.1).toFixed(1)})" aria-label="放大地圖" ${zoom >= 1.2 ? "disabled" : ""}>+</button>
         </div>
       </div>
       <div class="map-scroll" data-map-scroll>

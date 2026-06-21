@@ -2392,6 +2392,11 @@ button:disabled,
   border-left: 1px solid rgba(24, 33, 27, 0.08);
 }
 
+.map-zoom button:disabled {
+  color: rgba(36, 68, 58, 0.32);
+  cursor: default;
+}
+
 .map-card.illustrated {
   background: rgba(255, 255, 255, 0.24);
 }
