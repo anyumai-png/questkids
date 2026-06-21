@@ -658,7 +658,7 @@ function totalCompleted(childId = selectedChild()?.id) {
 
 function earnedBadges(childId = selectedChild()?.id) {
   const completed = totalCompleted(childId);
-  const moodStarted = state.moodLog.some((entry) => entry.childId === childId);
+  const moodStarted = state.moodLog.some((entry) => entry.childId === childId && entry.moodId !== "skipped");
   return badgeCatalog.filter((badge) => {
     if (badge.id === "first_step") return completed >= 1;
     if (badge.id === "three_tasks") return completed >= 3;
@@ -666,6 +666,22 @@ function earnedBadges(childId = selectedChild()?.id) {
     if (badge.id === "weekly_try") return calculateStreak(childId) >= 7;
     return false;
   });
+}
+
+function badgeProgress(badge, childId = selectedChild()?.id) {
+  const completed = totalCompleted(childId);
+  const moodStarted = state.moodLog.some((entry) => entry.childId === childId && entry.moodId !== "skipped");
+  const streak = calculateStreak(childId);
+  if (badge.id === "first_step") return { current: Math.min(completed, 1), target: 1 };
+  if (badge.id === "three_tasks") return { current: Math.min(completed, 3), target: 3 };
+  if (badge.id === "calm_start") return { current: moodStarted && completed ? 1 : 0, target: 1 };
+  if (badge.id === "weekly_try") return { current: Math.min(streak, 7), target: 7 };
+  return { current: 0, target: 1 };
+}
+
+function badgeProgressPercent(badge, childId = selectedChild()?.id) {
+  const progress = badgeProgress(badge, childId);
+  return Math.round((progress.current / progress.target) * 100);
 }
 
 function collectionFor(childId = selectedChild()?.id) {
@@ -2028,43 +2044,135 @@ function kidIslandView({ child, tasks, rate, mood }) {
 }
 
 function kidAchievementsView({ child, badges, skillMissions, streak }) {
+  const completed = totalCompleted(child.id);
+  const unlockedSkills = skillMissions.filter((mission) => mission.status === "unlocked").length;
+  const activeSkills = skillMissions.filter((mission) => mission.status !== "unlocked");
+  const nextBadge = badgeCatalog.find((badge) => !badges.some((earned) => earned.id === badge.id));
+  const nextProgress = nextBadge ? badgeProgress(nextBadge, child.id) : null;
+  const nextPercent = nextBadge ? badgeProgressPercent(nextBadge, child.id) : 100;
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const offset = index - 6;
+    const date = dateKeyOffset(offset);
+    const done = completionsFor(child.id).some((entry) => entry.date === date);
+    const label = offset === 0 ? "今天" : new Intl.DateTimeFormat("zh-Hant-HK", { weekday: "short" }).format(new Date(`${date}T12:00:00`));
+    return { date, done, label };
+  });
   return `
-    <section class="kid-page-head">
-      <span class="tag">${icon("star")} 成就</span>
-      <h1>今天學到的能力</h1>
-      <p class="muted">徽章、生活小秘技和連續練習都放在這裡。</p>
+    <section class="achievement-hero">
+      <div class="achievement-hero-copy">
+        <span class="tag">${icon("star")} 我的冒險紀錄</span>
+        <h1>${completed ? `你已經完成 ${completed} 個小任務` : "第一個成就，由開始一步出發"}</h1>
+        <p>${completed ? "每次願意開始，都會在小島留下新的足跡。" : "不用一次做到完美，完成第一小步就會得到第一枚徽章。"}</p>
+        <div class="achievement-summary-row">
+          <span><strong>${streak}</strong> 天連續</span>
+          <span><strong>${badges.length}</strong> 枚徽章</span>
+          <span><strong>${unlockedSkills}</strong> 項能力</span>
+        </div>
+      </div>
+      <div class="achievement-trophy" aria-hidden="true">
+        <span class="trophy-rays"></span>
+        <span class="trophy-cup">${badges.length ? icon(badges[badges.length - 1].icon) : icon("sprout")}</span>
+        <strong>${badges.length}/${badgeCatalog.length}</strong>
+        <small>徽章收藏</small>
+      </div>
     </section>
-    <section class="stats">
-      ${statCard("連續日數", `${streak} 天`)}
-      ${statCard("探索星", child.stars || 0)}
-      ${statCard("糖果", child.candies || 0)}
-      ${statCard("徽章", badges.length)}
-    </section>
-    <section class="panel">
+    ${
+      nextBadge
+        ? `
+          <section class="next-achievement-card">
+            <div class="next-achievement-icon">${icon(nextBadge.icon)}</div>
+            <div class="next-achievement-copy">
+              <span class="tag">下一個目標</span>
+              <h2>${nextBadge.name}</h2>
+              <p>${nextBadge.rule}</p>
+              <div class="next-achievement-progress">
+                <span style="--value:${nextPercent}%"></span>
+              </div>
+              <small>${nextProgress.current}/${nextProgress.target} 已完成</small>
+            </div>
+            <strong>${nextPercent}%</strong>
+          </section>
+        `
+        : `
+          <section class="next-achievement-card complete">
+            <div class="next-achievement-icon">${icon("star")}</div>
+            <div class="next-achievement-copy">
+              <span class="tag">徽章全收集</span>
+              <h2>你已完成目前所有徽章目標</h2>
+              <p>繼續累積小任務和生活能力，新的島嶼挑戰會再出現。</p>
+            </div>
+            <strong>100%</strong>
+          </section>
+        `
+    }
+    <section class="panel achievement-week-panel">
       <div class="section-title">
         <div>
+          <span class="tag">${icon("lighthouse")} 最近 7 天</span>
+          <h2>回來繼續的足跡</h2>
+        </div>
+        <span class="small-tag">${streak} 天連續</span>
+      </div>
+      <div class="achievement-week">
+        ${weekDays
+          .map(
+            (day, index) => `
+              <div class="${day.done ? "done" : ""} ${index === 6 ? "today" : ""}">
+                <span>${day.done ? "✓" : index + 1}</span>
+                <strong>${day.label}</strong>
+              </div>
+            `,
+          )
+          .join("")}
+      </div>
+      <p class="achievement-week-note">${streak ? "你有回來繼續，這比一次做很多更重要。" : "今天完成一個小任務，就會點亮第一個足跡。"}</p>
+    </section>
+    <section class="panel achievement-skill-panel">
+      <div class="section-title">
+        <div>
+          <span class="tag">${icon("shoe")} 生活能力</span>
           <h2>能力任務</h2>
           <p class="muted">抽到生活小秘技後，完成練習才會真正解鎖能力。</p>
         </div>
+        <span class="small-tag">${unlockedSkills}/${skillMissions.length || 0} 已學會</span>
       </div>
       <div class="grid">
         ${
           skillMissions.length
             ? skillMissions.map(skillMissionCard).join("")
-            : `<div class="empty">還未抽到能力卡。完成任務開卡包，可能會遇到生活小秘技。</div>`
+            : `<div class="achievement-skill-empty">
+                <div class="empty-skill-art">${icon("shoe")} ${icon("paper")} ${icon("knot")}</div>
+                <strong>能力任務仍在卡包中等你</strong>
+                <p>完成 3 個小任務收集探索星，就有機會遇到綁鞋帶、摺紙和繩結等生活能力。</p>
+                <button class="button primary" onclick="setKidTab('island')">返回小島做任務</button>
+              </div>`
         }
       </div>
     </section>
-    <section class="panel">
+    <section class="panel achievement-badge-panel">
       <div class="section-title">
-        <h2>我的徽章</h2>
+        <div>
+          <span class="tag">${icon("sticker")} 徽章收藏</span>
+          <h2>我的徽章</h2>
+        </div>
         <span class="muted">${badges.length}/${badgeCatalog.length}</span>
       </div>
-      <div class="grid cols-4">
+      <div class="achievement-badge-grid">
         ${badgeCatalog
           .map((badge) => {
             const earned = badges.some((item) => item.id === badge.id);
-            return `<article class="card ${earned ? "" : "muted"}"><div class="avatar">${icon(badge.icon)}</div><h3>${badge.name}</h3><p class="muted">${badge.rule}</p></article>`;
+            const progress = badgeProgress(badge, child.id);
+            const percent = badgeProgressPercent(badge, child.id);
+            return `
+              <article class="achievement-badge ${earned ? "earned" : "locked"}">
+                <div class="badge-medal" style="--progress:${percent}%">
+                  <span>${earned ? icon(badge.icon) : "?"}</span>
+                </div>
+                <span class="badge-state">${earned ? "已取得" : `${progress.current}/${progress.target}`}</span>
+                <h3>${badge.name}</h3>
+                <p>${badge.rule}</p>
+              </article>
+            `;
           })
           .join("")}
       </div>
