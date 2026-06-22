@@ -1306,7 +1306,7 @@ function selectMapZone(zoneId) {
 
 function setMapZoom(nextZoom) {
   const roundedZoom = Math.round((Number(nextZoom) || 1) * 10) / 10;
-  state.mapZoom = Math.max(0.9, Math.min(1.2, roundedZoom));
+  state.mapZoom = Math.max(0.5, Math.min(1.2, roundedZoom));
   saveState();
   render();
 }
@@ -1673,19 +1673,20 @@ function islandMap(options = {}) {
   const child = selectedChild();
   const zones = child ? zoneStats(child.id) : zoneCatalog.map((zone) => ({ ...zone, total: 0, done: 0, progress: 0 }));
   const overall = child ? todayCompletionRate(child.id) : 0;
-  const zoom = Math.max(0.9, Math.min(1.2, Math.round(Number(state.mapZoom || 1) * 10) / 10));
+  const zoom = Math.max(0.5, Math.min(1.2, Math.round(Number(state.mapZoom || 1) * 10) / 10));
   const canvasWidth = Math.round(760 * zoom);
-  const canvasHeight = Math.round(560 * zoom);
+  const canvasHeight = Math.round(1180 * zoom);
   const focusedZone = state.kidZoneFocus ? zones.find((zone) => zone.id === state.kidZoneFocus) : null;
   const zoneTask = focusedZone ? nextTaskForZone(focusedZone.id, child?.id) : null;
   return `
     <div class="map-card illustrated ${options.compact ? "compact" : ""}">
       <div class="map-toolbar" aria-label="地圖操作">
-        <span>${icon("spark")} 拖動地圖探索</span>
+        <span>${icon("spark")} 上下左右拖動</span>
         <div class="map-zoom">
-          <button type="button" onclick="setMapZoom(${(zoom - 0.1).toFixed(1)})" aria-label="縮小地圖" ${zoom <= 0.9 ? "disabled" : ""}>−</button>
+          <button type="button" onclick="setMapZoom(${(zoom - 0.1).toFixed(1)})" aria-label="縮小地圖" ${zoom <= 0.5 ? "disabled" : ""}>−</button>
           <button type="button" onclick="setMapZoom(1)" aria-label="重設地圖，目前倍率 ${mapZoomLabel(zoom)}">${mapZoomLabel(zoom)}</button>
           <button type="button" onclick="setMapZoom(${(zoom + 0.1).toFixed(1)})" aria-label="放大地圖" ${zoom >= 1.2 ? "disabled" : ""}>+</button>
+          <button type="button" onclick="setMapZoom(0.5)" aria-label="顯示地圖全景">⛶</button>
         </div>
       </div>
       <div class="map-scroll" data-map-scroll>
@@ -3030,12 +3031,14 @@ function initMapInteractions() {
     requestAnimationFrame(centerMap);
 
     viewport.addEventListener("pointerdown", (event) => {
+      if (event.button !== undefined && event.button !== 0) return;
       active = true;
       moved = false;
       startX = event.clientX;
       startY = event.clientY;
       startLeft = viewport.scrollLeft;
       startTop = viewport.scrollTop;
+      viewport.setPointerCapture?.(event.pointerId);
       viewport.classList.add("drag-ready");
     });
 
@@ -3052,15 +3055,17 @@ function initMapInteractions() {
       }
     });
 
-    const endDrag = () => {
+    const endDrag = (event) => {
       active = false;
+      if (event?.pointerId !== undefined && viewport.hasPointerCapture?.(event.pointerId)) {
+        viewport.releasePointerCapture(event.pointerId);
+      }
       viewport.classList.remove("drag-ready");
       setTimeout(() => viewport.classList.remove("dragging"), 0);
     };
 
     viewport.addEventListener("pointerup", endDrag);
     viewport.addEventListener("pointercancel", endDrag);
-    viewport.addEventListener("pointerleave", endDrag);
     viewport.addEventListener(
       "click",
       (event) => {
