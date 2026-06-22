@@ -484,6 +484,8 @@ const demoState = () => {
     pauseEncouragement: null,
     kidZoneFocus: null,
     kidTaskExpanded: false,
+    kidPlanningMode: false,
+    dailyTaskOrders: {},
     focusSkillMissionId: null,
     onboardingStep: "profile",
     narratorTab: "guide",
@@ -519,6 +521,7 @@ const demoState = () => {
         icon: "bag",
         steps: ["把書包放到桌上", "按明天時間表拿書本", "把水壺和功課袋放進書包"],
         active: true,
+        required: true,
       },
       {
         id: uid("task"),
@@ -530,6 +533,7 @@ const demoState = () => {
         icon: "book",
         steps: ["坐到書桌前", "拿出今天第一份功課", "只做第一題或第一行"],
         active: true,
+        required: true,
       },
       {
         id: uid("task"),
@@ -541,6 +545,7 @@ const demoState = () => {
         icon: "home",
         steps: ["先拿起地上的衣物", "把玩具放回同一個盒", "清出桌面一小角"],
         active: true,
+        required: true,
       },
       {
         id: uid("task"),
@@ -552,6 +557,7 @@ const demoState = () => {
         icon: "water",
         steps: ["把燈光調暗", "選一件舒服睡衣", "做三次慢慢呼吸"],
         active: true,
+        required: false,
       },
     ],
     completions: [],
@@ -577,7 +583,7 @@ const demoState = () => {
   };
 };
 
-const STORE_VERSION = 7;
+const STORE_VERSION = 8;
 let state = loadState();
 let liveClockIntervalId = null;
 let narratorAutoTimerId = null;
@@ -608,6 +614,8 @@ function migrateState(saved) {
   if (!merged.onboardingStep) merged.onboardingStep = "profile";
   if (typeof merged.narratorCollapsed !== "boolean") merged.narratorCollapsed = true;
   if (typeof merged.mapZoom !== "number") merged.mapZoom = 1;
+  if (typeof merged.kidPlanningMode !== "boolean") merged.kidPlanningMode = false;
+  if (!merged.dailyTaskOrders || typeof merged.dailyTaskOrders !== "object" || Array.isArray(merged.dailyTaskOrders)) merged.dailyTaskOrders = {};
   if (typeof merged.narratorAutoCollapseAt !== "number") merged.narratorAutoCollapseAt = 0;
   if (!("focusSkillMissionId" in merged)) merged.focusSkillMissionId = null;
   if (typeof merged.settings.onboardingComplete !== "boolean") merged.settings.onboardingComplete = Boolean(saved.children?.length);
@@ -617,6 +625,10 @@ function migrateState(saved) {
   for (const key of ["children", "tasks", "completions", "collection", "skillMissions", "moodLog", "parentMessages", "rewards"]) {
     if (!Array.isArray(merged[key])) merged[key] = base[key];
   }
+  merged.tasks = merged.tasks.map((task) => ({
+    ...task,
+    required: typeof task.required === "boolean" ? task.required : true,
+  }));
   if (!merged.children.length) return demoState();
   if (!merged.children.some((child) => child.id === merged.selectedChildId)) {
     merged.selectedChildId = merged.children[0].id;
@@ -642,6 +654,31 @@ function selectedChild() {
 
 function childTasks(childId = selectedChild()?.id) {
   return allChildTasks(childId).filter((task) => task.active);
+}
+
+function dailyTaskOrderKey(childId = selectedChild()?.id) {
+  return `${childId}:${todayKey()}`;
+}
+
+function orderedChildTasks(childId = selectedChild()?.id) {
+  const tasks = childTasks(childId);
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
+  const savedOrder = state.dailyTaskOrders?.[dailyTaskOrderKey(childId)] || [];
+  const ordered = savedOrder.map((taskId) => taskById.get(taskId)).filter(Boolean);
+  const knownIds = new Set(ordered.map((task) => task.id));
+  return [...ordered, ...tasks.filter((task) => !knownIds.has(task.id))];
+}
+
+function requiredChildTasks(childId = selectedChild()?.id) {
+  const tasks = childTasks(childId);
+  const required = tasks.filter((task) => task.required);
+  return required.length ? required : tasks;
+}
+
+function todayRequiredRate(childId = selectedChild()?.id) {
+  const tasks = requiredChildTasks(childId);
+  if (!tasks.length) return 0;
+  return Math.round((tasks.filter((task) => isDoneToday(task.id)).length / tasks.length) * 100);
 }
 
 function allChildTasks(childId = selectedChild()?.id) {
@@ -1672,7 +1709,7 @@ function nextTaskForZone(zoneId, childId = selectedChild()?.id) {
 function islandMap(options = {}) {
   const child = selectedChild();
   const zones = child ? zoneStats(child.id) : zoneCatalog.map((zone) => ({ ...zone, total: 0, done: 0, progress: 0 }));
-  const overall = child ? todayCompletionRate(child.id) : 0;
+  const overall = child ? todayRequiredRate(child.id) : 0;
   const zoom = Math.max(0.5, Math.min(1.2, Math.round(Number(state.mapZoom || 1) * 10) / 10));
   const canvasWidth = Math.round(760 * zoom);
   const canvasHeight = Math.round(1180 * zoom);
@@ -1730,7 +1767,7 @@ function islandMap(options = {}) {
           : ""
       }
       <div class="map-progress">
-        <span>今日島嶼進度</span>
+        <span>必須任務進度</span>
         <strong>${overall}%</strong>
         <div class="progress"><span style="--value:${overall}%"></span></div>
       </div>
@@ -1795,8 +1832,8 @@ function skipMood() {
 function kidView() {
   const child = selectedChild();
   if (!child) return `<div class="empty">請先在家長端新增孩子。</div>`;
-  const tasks = childTasks(child.id);
-  const rate = todayCompletionRate(child.id);
+  const tasks = orderedChildTasks(child.id);
+  const rate = todayRequiredRate(child.id);
   const badges = earnedBadges(child.id);
   const streak = calculateStreak(child.id);
   const ownedCards = collectionCards(child.id).filter((card) => card.owned);
@@ -1957,9 +1994,13 @@ function landscapeTaskItem(task) {
 function kidIslandView({ child, tasks, rate, mood }) {
   const focusedZone = state.kidZoneFocus ? zoneCatalog.find((zone) => zone.id === state.kidZoneFocus) : null;
   const filteredTasks = focusedZone ? tasks.filter((task) => zoneForTask(task).id === focusedZone.id) : tasks;
-  const orderedTasks = [...filteredTasks].sort((a, b) => Number(isDoneToday(a.id)) - Number(isDoneToday(b.id)));
+  const orderedTasks = state.kidPlanningMode
+    ? [...filteredTasks]
+    : [...filteredTasks].sort((a, b) => Number(isDoneToday(a.id)) - Number(isDoneToday(b.id)));
   const allDone = orderedTasks.length > 0 && orderedTasks.every((task) => isDoneToday(task.id));
-  const visibleTasks = state.kidTaskExpanded || allDone ? orderedTasks : orderedTasks.slice(0, 3);
+  const visibleTasks = state.kidPlanningMode || state.kidTaskExpanded || allDone ? orderedTasks : orderedTasks.slice(0, 3);
+  const requiredTasks = requiredChildTasks(child.id);
+  const requiredDone = requiredTasks.filter((task) => isDoneToday(task.id)).length;
   const stars = child.stars || 0;
   const packProgress = Math.min(100, Math.round((stars / 3) * 100));
   const starsNeeded = Math.max(0, 3 - stars);
@@ -2031,10 +2072,16 @@ function kidIslandView({ child, tasks, rate, mood }) {
       <div class="panel today-card">
         <div class="section-title">
           <div>
-            <h2>${focusedZone ? `${focusedZone.name} 任務` : "今日任務"}</h2>
+            <span class="tag">${icon("shield")} 今日必須完成 ${requiredDone}/${requiredTasks.length}</span>
+            <h2>${focusedZone ? `${focusedZone.name} 任務` : state.kidPlanningMode ? "自己安排今日次序" : "今日任務"}</h2>
             ${focusedZone ? `<p class="muted zone-focus-copy">已按地圖聚焦這一區的小任務。</p>` : ""}
+            ${!focusedZone ? `<p class="muted zone-focus-copy">${state.kidPlanningMode ? "先把最想開始的任務排到上面，完成後仍可再調整。" : "必須項目全部完成，就達成今天的核心目標。"}</p>` : ""}
           </div>
-          <span class="small-tag">${filteredTasks.filter((task) => isDoneToday(task.id)).length}/${filteredTasks.length || 0}</span>
+          ${
+            focusedZone
+              ? `<span class="small-tag">${filteredTasks.filter((task) => isDoneToday(task.id)).length}/${filteredTasks.length || 0}</span>`
+              : `<button class="button ${state.kidPlanningMode ? "primary" : "ghost"} kid-plan-toggle" onclick="toggleKidPlanningMode()">${state.kidPlanningMode ? "排好了" : "自己排次序"}</button>`
+          }
         </div>
         ${
           focusedZone
@@ -2044,7 +2091,11 @@ function kidIslandView({ child, tasks, rate, mood }) {
         <div class="mini-task-list">
           ${
             visibleTasks.length
-              ? visibleTasks.map(taskMiniCard).join("")
+              ? visibleTasks
+                  .map((task, index) =>
+                    state.kidPlanningMode && !focusedZone ? taskPlanningCard(task, index, visibleTasks.length) : taskMiniCard(task),
+                  )
+                  .join("")
               : `<div class="empty">${focusedZone ? "這一區暫時未有任務。試試按其他地方。" : "今日未有任務。請到家長端新增。"}</div>`
           }
           ${
@@ -2464,7 +2515,10 @@ function taskMiniCard(task) {
     <article class="mini-task ${done ? "done" : ""}">
       <div class="task-icon">${done ? "OK" : icon(task.icon)}</div>
       <div>
-        <h3>${esc(task.title)}</h3>
+        <div class="mini-task-title">
+          <h3>${esc(task.title)}</h3>
+          <span class="task-importance ${task.required ? "required" : "optional"}">${task.required ? "必須" : "自選"}</span>
+        </div>
         <div class="mini-progress-row">
           <div class="progress"><span style="--value:${done ? 100 : 35}%"></span></div>
           <small>${task.minutes} 分鐘</small>
@@ -2477,6 +2531,49 @@ function taskMiniCard(task) {
       }
     </article>
   `;
+}
+
+function taskPlanningCard(task, index, total) {
+  const done = isDoneToday(task.id);
+  const zone = zoneForTask(task);
+  return `
+    <article class="mini-task planning ${done ? "done" : ""}">
+      <div class="kid-task-order">${index + 1}</div>
+      <div class="task-icon">${done ? "OK" : icon(task.icon)}</div>
+      <div class="planning-task-copy">
+        <div class="mini-task-title">
+          <h3>${esc(task.title)}</h3>
+          <span class="task-importance ${task.required ? "required" : "optional"}">${task.required ? "必須" : "自選"}</span>
+        </div>
+        <small>${icon(zone.icon)} ${zone.name} · ${task.minutes} 分鐘${done ? " · 已完成" : ""}</small>
+      </div>
+      <div class="kid-task-order-actions">
+        <button type="button" onclick="moveKidTask('${task.id}', -1)" aria-label="將${esc(task.title)}排前" ${index === 0 ? "disabled" : ""}>↑</button>
+        <button type="button" onclick="moveKidTask('${task.id}', 1)" aria-label="將${esc(task.title)}排後" ${index === total - 1 ? "disabled" : ""}>↓</button>
+      </div>
+    </article>
+  `;
+}
+
+function toggleKidPlanningMode() {
+  state.kidPlanningMode = !state.kidPlanningMode;
+  state.kidZoneFocus = null;
+  state.kidTaskExpanded = state.kidPlanningMode;
+  saveState();
+  render();
+}
+
+function moveKidTask(taskId, direction) {
+  const child = selectedChild();
+  if (!child) return;
+  const tasks = orderedChildTasks(child.id);
+  const currentIndex = tasks.findIndex((task) => task.id === taskId);
+  const nextIndex = currentIndex + Number(direction);
+  if (currentIndex < 0 || nextIndex < 0 || nextIndex >= tasks.length) return;
+  [tasks[currentIndex], tasks[nextIndex]] = [tasks[nextIndex], tasks[currentIndex]];
+  state.dailyTaskOrders[dailyTaskOrderKey(child.id)] = tasks.map((task) => task.id);
+  saveState();
+  render();
 }
 
 function startTask(taskId) {
@@ -3653,10 +3750,10 @@ function parentTaskRow(task, index, total) {
           <input type="checkbox" ${task.active ? "checked" : ""} onchange="toggleTaskActive('${task.id}')" />
           <span>${task.active ? "今天顯示" : "已暫停安排"}</span>
         </label>
-      </div>
-      <div class="task-order-actions" aria-label="調整任務次序">
-        <button type="button" onclick="moveTask('${task.id}', -1)" aria-label="將${esc(task.title)}上移" ${index === 0 ? "disabled" : ""}>↑</button>
-        <button type="button" onclick="moveTask('${task.id}', 1)" aria-label="將${esc(task.title)}下移" ${index === total - 1 ? "disabled" : ""}>↓</button>
+        <label class="task-active-toggle required-toggle">
+          <input type="checkbox" ${task.required ? "checked" : ""} onchange="toggleTaskRequired('${task.id}')" />
+          <span>${task.required ? "必須完成" : "自選任務"}</span>
+        </label>
       </div>
     </article>
   `;
@@ -3844,8 +3941,8 @@ function tasksTab() {
       <section class="task-plan-summary">
         <div class="task-plan-heading">
           <span class="tag">${icon("star")} 今日安排</span>
-          <h2>先排好順序，孩子只需要看見下一步</h2>
-          <p>拖動感覺不清楚時，可用箭嘴調整先後；暫停的任務會保留資料，但不會出現在孩子今天的小島。</p>
+          <h2>家長定核心任務，孩子自己安排次序</h2>
+          <p>設定哪些項目今天必須完成；孩子會在自己的小島決定先做哪一項。暫停的任務會保留資料，但不會出現在今日清單。</p>
         </div>
         <div class="task-plan-metrics">
           <article>
@@ -3892,6 +3989,10 @@ function tasksTab() {
           <label class="field">分鐘<input name="minutes" type="number" min="1" max="60" value="10" required /></label>
           <label class="field">XP<input name="xp" type="number" min="5" max="100" value="25" required /></label>
         </div>
+        <label class="task-required-field">
+          <input name="required" type="checkbox" checked />
+          <span><strong>列為今日必須項目</strong><small>孩子可以自行調整次序，但需要完成這一項。</small></span>
+        </label>
         <label class="field">三個小步驟<textarea name="steps" placeholder="每行一個小步驟" oninput="updateMagicPreview(this.form)"></textarea></label>
         <div class="magic-preview-card">
           <span class="tag">${icon("spark")} 第一步魔法卡預覽</span>
@@ -3905,26 +4006,18 @@ function tasksTab() {
   `;
 }
 
-function moveTask(taskId, direction) {
-  const child = selectedChild();
-  const childTaskIndexes = state.tasks
-    .map((task, index) => ({ task, index }))
-    .filter(({ task }) => task.childId === child?.id)
-    .map(({ index }) => index);
-  const currentPosition = childTaskIndexes.findIndex((index) => state.tasks[index].id === taskId);
-  const nextPosition = currentPosition + Number(direction);
-  if (currentPosition < 0 || nextPosition < 0 || nextPosition >= childTaskIndexes.length) return;
-  const currentIndex = childTaskIndexes[currentPosition];
-  const nextIndex = childTaskIndexes[nextPosition];
-  [state.tasks[currentIndex], state.tasks[nextIndex]] = [state.tasks[nextIndex], state.tasks[currentIndex]];
-  saveState();
-  render();
-}
-
 function toggleTaskActive(taskId) {
   const task = state.tasks.find((item) => item.id === taskId);
   if (!task) return;
   task.active = !task.active;
+  saveState();
+  render();
+}
+
+function toggleTaskRequired(taskId) {
+  const task = state.tasks.find((item) => item.id === taskId);
+  if (!task) return;
+  task.required = !task.required;
   saveState();
   render();
 }
@@ -3950,6 +4043,7 @@ function addTask(event) {
     icon: zoneForTask({ area: data.get("area") }).icon,
     steps: resolvedTaskSteps(title, area, manualSteps),
     active: true,
+    required: data.get("required") === "on",
   });
   saveState();
   render();
