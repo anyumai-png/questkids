@@ -7184,3 +7184,82 @@ p {
     border-radius: 12px;
   }
 }
+.daily-pack-line,
+.daily-pack-hint {
+  display: block;
+  margin: 4px 0 0;
+  color: #607068;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.daily-pack-hint {
+  text-align: center;
+}
+
+.celebration-xp-note,
+.celebration-pack-note {
+  margin: 0 0 6px;
+  border-radius: 14px;
+  padding: 10px 12px;
+  color: #5c3c16;
+  background: rgba(255, 240, 191, 0.7);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.daily-reward-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 96px;
+  z-index: 32;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  border: 1px solid rgba(255, 255, 255, 0.84);
+  border-radius: 999px;
+  padding: 10px 14px 10px 12px;
+  color: #5c3c16;
+  background: rgba(255, 247, 224, 0.94);
+  box-shadow: 0 16px 36px rgba(35, 48, 40, 0.18);
+  font-size: 13px;
+  font-weight: 800;
+  animation: narratorPop 220ms ease-out;
+}
+
+.daily-reward-toast span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 16px;
+}
+
+.daily-reward-toast button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: #5c3c16;
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.daily-reward-toast button:hover {
+  background: #fff;
+}
+
+@media (max-width: 620px) {
+  .daily-reward-toast {
+    right: 12px;
+    left: 12px;
+    bottom: 90px;
+    max-width: none;
+  }
+}

@@ -1,5 +1,14 @@
 const STORE_KEY = "questkids.mvp.v4";
 
+const DAILY_REWARDS = {
+  xpLimit: 60,
+  packLimit: 2,
+};
+
+function dailyRewardKey(childId, dateKey) {
+  return `${childId}::${dateKey}`;
+}
+
 const todayKey = () => {
   return dateKeyFor(new Date());
 };
@@ -534,6 +543,7 @@ const demoState = () => {
     narratorAutoCollapseAt: 0,
     mapZoom: 1,
     timer: { running: false, secondsLeft: 0, totalSeconds: 0, intervalId: null },
+    dailyRewards: {},
     children: [
       {
         id: childId,
@@ -633,6 +643,7 @@ let narratorAutoTimerId = null;
 let collectionDetailCardId = null;
 let collectionTypeFilter = "all";
 let collectionOwnershipFilter = "all";
+let dailyRewardToast = null;
 
 function loadState() {
   try {
@@ -662,6 +673,9 @@ function migrateState(saved) {
   if (typeof merged.narratorAutoCollapseAt !== "number") merged.narratorAutoCollapseAt = 0;
   if (!("focusSkillMissionId" in merged)) merged.focusSkillMissionId = null;
   if (typeof merged.settings.onboardingComplete !== "boolean") merged.settings.onboardingComplete = Boolean(saved.children?.length);
+  if (!merged.dailyRewards || typeof merged.dailyRewards !== "object" || Array.isArray(merged.dailyRewards)) {
+    merged.dailyRewards = {};
+  }
   if (!merged.settings.parentPin) merged.settings.parentPin = "1234";
   if (typeof merged.settings.parentVerified !== "boolean") merged.settings.parentVerified = false;
   if (typeof merged.settings.parentPinInput !== "string") merged.settings.parentPinInput = "";
@@ -677,6 +691,7 @@ function migrateState(saved) {
   if (!merged.children.some((child) => child.id === merged.selectedChildId)) {
     merged.selectedChildId = merged.children[0].id;
   }
+  ensureDailyRewardRecord(merged, merged.selectedChildId, todayKey());
   merged.version = STORE_VERSION;
   return merged;
 }
@@ -685,6 +700,62 @@ function saveState() {
   if (state.selectedChildId) pruneDailyTaskOrder(state.selectedChildId);
   const clean = { ...state, timer: { running: false, secondsLeft: 0, totalSeconds: 0, intervalId: null } };
   localStorage.setItem(STORE_KEY, JSON.stringify(clean));
+}
+
+function ensureDailyRewardRecord(target, childId, dateKey) {
+  if (!childId || !dateKey) return null;
+  if (!target.dailyRewards || typeof target.dailyRewards !== "object" || Array.isArray(target.dailyRewards)) {
+    target.dailyRewards = {};
+  }
+  const key = dailyRewardKey(childId, dateKey);
+  const existing = target.dailyRewards[key];
+  if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+    existing.xpEarned = Math.max(0, Number(existing.xpEarned) || 0);
+    existing.packsOpened = Math.max(0, Number(existing.packsOpened) || 0);
+    existing.lastUpdated = existing.lastUpdated || new Date().toISOString();
+    return existing;
+  }
+  const created = {
+    xpEarned: 0,
+    packsOpened: 0,
+    lastUpdated: new Date().toISOString(),
+  };
+  target.dailyRewards[key] = created;
+  return created;
+}
+
+function getDailyRewardRecord(childId, dateKey = todayKey()) {
+  return ensureDailyRewardRecord(state, childId, dateKey);
+}
+
+function dailyXpRemaining(childId, dateKey = todayKey()) {
+  const record = getDailyRewardRecord(childId, dateKey);
+  return Math.max(0, DAILY_REWARDS.xpLimit - (record.xpEarned || 0));
+}
+
+function dailyPacksRemaining(childId, dateKey = todayKey()) {
+  const record = getDailyRewardRecord(childId, dateKey);
+  return Math.max(0, DAILY_REWARDS.packLimit - (record.packsOpened || 0));
+}
+
+function applyDailyXpAward(childId, requestedXp, dateKey = todayKey()) {
+  const safeRequest = Math.max(0, Math.floor(Number(requestedXp) || 0));
+  if (!safeRequest) return { granted: 0, capped: false };
+  const record = getDailyRewardRecord(childId, dateKey);
+  const remaining = Math.max(0, DAILY_REWARDS.xpLimit - (record.xpEarned || 0));
+  if (remaining <= 0) return { granted: 0, capped: true };
+  const granted = Math.min(safeRequest, remaining);
+  record.xpEarned = (record.xpEarned || 0) + granted;
+  record.lastUpdated = new Date().toISOString();
+  return { granted, capped: granted < safeRequest };
+}
+
+function registerPackOpened(childId, dateKey = todayKey()) {
+  const record = getDailyRewardRecord(childId, dateKey);
+  if ((record.packsOpened || 0) >= DAILY_REWARDS.packLimit) return false;
+  record.packsOpened = (record.packsOpened || 0) + 1;
+  record.lastUpdated = new Date().toISOString();
+  return true;
 }
 
 function setState(patch) {
@@ -868,6 +939,11 @@ function packPreviewStrip(childId = selectedChild()?.id) {
 function openCardPack() {
   const child = selectedChild();
   if (!child || (child.stars || 0) < 3) return;
+  const remaining = dailyPacksRemaining(child.id);
+  if (remaining <= 0) {
+    setDailyRewardToast("今天已探索好多，明天再開新一包。");
+    return;
+  }
   state.cardReveal = { phase: "pack" };
   saveState();
   render();
@@ -876,6 +952,11 @@ function openCardPack() {
 function revealCardPack() {
   const child = selectedChild();
   if (!child || (child.stars || 0) < 3) return;
+  if (!registerPackOpened(child.id)) {
+    state.cardReveal = null;
+    setDailyRewardToast("今天已探索好多，明天再開新一包。");
+    return;
+  }
   child.stars -= 3;
   const owned = ownedCardIds(child.id);
   const unowned = cardCatalog.filter((card) => !owned.has(card.id));
@@ -925,10 +1006,15 @@ function finalizeSkillMission(missionId) {
   mission.status = "unlocked";
   mission.completedSteps = mission.steps.map((_, index) => index);
   mission.completedAt = todayKey();
-  child.xp = (child.xp || 0) + 25;
+  const award = applyDailyXpAward(child.id, 25);
+  child.xp = (child.xp || 0) + award.granted;
   child.stars = (child.stars || 0) + 1;
   saveState();
-  render();
+  if (award.capped) {
+    setDailyRewardToast("今天的 XP 已收集完成，能力練習仍然記錄好了。");
+  } else {
+    render();
+  }
 }
 
 function completeSkillMission(missionId) {
@@ -1167,6 +1253,7 @@ function render() {
       ${floatingNarratorWidget(route)}
       ${route === "kid" && shouldShowMoodModal() ? moodModal() : ""}
       ${state.pendingConfirm ? confirmModal() : ""}
+      ${dailyRewardToastMarkup()}
       ${state.taskCelebration ? taskCelebrationModal() : ""}
       ${state.cardReveal ? cardRevealModal() : ""}
       ${collectionDetailCardId ? collectionCardDetailModal() : ""}
@@ -1228,6 +1315,7 @@ function cardRevealModal() {
 function cardPackOpeningModal() {
   const child = selectedChild();
   const ownedCount = collectionFor(child?.id).length;
+  const packsRemaining = dailyPacksRemaining(child?.id);
   return `
     <div class="modal-backdrop card-reveal-backdrop" role="dialog" aria-modal="true" aria-labelledby="pack-title">
       <div class="modal card-modal pack-modal unopened-pack">
@@ -1241,6 +1329,7 @@ function cardPackOpeningModal() {
           <div>
             <h2 id="pack-title">打開一包新發現</h2>
             <p class="muted">會出現一張收藏卡，可能是夥伴、動物圖鑑、能力卡、名勝或美食。</p>
+            <p class="muted daily-pack-line">今日已開 ${DAILY_REWARDS.packLimit - packsRemaining}/${DAILY_REWARDS.packLimit} 包</p>
           </div>
         </div>
         <div class="pack-pool">
@@ -1256,7 +1345,7 @@ function cardPackOpeningModal() {
         ${packPreviewStrip(child?.id)}
         <p class="muted">已發現 ${ownedCount}/${cardCatalog.length}。沒有失敗卡，每次都會讓圖鑑多一點進度。</p>
         <div class="row">
-          <button class="button primary large" onclick="revealCardPack()">打開卡包</button>
+          <button class="button primary large" ${packsRemaining > 0 ? "" : "disabled"} onclick="revealCardPack()">${packsRemaining > 0 ? "打開卡包" : "今天已探索好多"}</button>
           <button class="button" onclick="closeCardReveal()">稍後再開</button>
         </div>
       </div>
@@ -2066,6 +2155,8 @@ function kidIslandView({ child, tasks, rate, mood }) {
   const stars = child.stars || 0;
   const packProgress = Math.min(100, Math.round((stars / 3) * 100));
   const starsNeeded = Math.max(0, 3 - stars);
+  const dailyXpRecord = getDailyRewardRecord(child.id);
+  const dailyPacksLeft = dailyPacksRemaining(child.id);
   const focusMission = skillMissionsFor(child.id).find((mission) => mission.status !== "unlocked");
   const focusTask = orderedTasks.find((task) => !isDoneToday(task.id));
   const focusZone = focusTask ? zoneForTask(focusTask) : null;
@@ -2191,6 +2282,7 @@ function kidIslandView({ child, tasks, rate, mood }) {
         <span class="tag">${icon("card")} 任務卡包</span>
         <h2>收集夥伴、物件和地圖裝飾</h2>
         <p class="muted">${starsNeeded ? `再完成 ${starsNeeded} 個小任務就可以開一包。` : "探索星已集齊，可以開一包。"}</p>
+        <p class="muted daily-pack-line">今日 XP ${Math.min(dailyXpRecord.xpEarned || 0, DAILY_REWARDS.xpLimit)}/${DAILY_REWARDS.xpLimit} · 已開 ${DAILY_REWARDS.packLimit - dailyPacksLeft}/${DAILY_REWARDS.packLimit} 包</p>
         <div class="pack-teasers">
           <span>${icon("cat")} 夥伴</span>
           <span>${icon("tower")} 名勝</span>
@@ -2202,7 +2294,8 @@ function kidIslandView({ child, tasks, rate, mood }) {
         <div class="pack-art">${icon("card")}</div>
         <strong>${stars}/3 探索星</strong>
         <div class="pack-progress"><span style="--value:${packProgress}%"></span></div>
-        <button class="button primary" ${stars >= 3 ? "" : "disabled"} onclick="openCardPack()">開卡包</button>
+        <button class="button primary" ${stars >= 3 && dailyPacksLeft > 0 ? "" : "disabled"} onclick="openCardPack()">${dailyPacksLeft > 0 ? "開卡包" : "今天已探索好多"}</button>
+        <small class="muted daily-pack-hint">${dailyPacksLeft > 0 ? `今天還可以開 ${dailyPacksLeft} 包` : "明天再開新一包"}</small>
       </div>
     </section>
 
@@ -2220,6 +2313,32 @@ function kidIslandView({ child, tasks, rate, mood }) {
         `
         : ""
     }
+  `;
+}
+
+function setDailyRewardToast(message) {
+  dailyRewardToast = { message };
+  render();
+  setTimeout(() => {
+    if (dailyRewardToast?.message !== message) return;
+    dailyRewardToast = null;
+    render();
+  }, 3200);
+}
+
+function dismissDailyRewardToast() {
+  dailyRewardToast = null;
+  render();
+}
+
+function dailyRewardToastMarkup() {
+  if (!dailyRewardToast) return "";
+  return `
+    <div class="daily-reward-toast" role="status" aria-live="polite">
+      <span>${icon("spark")}</span>
+      <strong>${esc(dailyRewardToast.message)}</strong>
+      <button type="button" onclick="dismissDailyRewardToast()" aria-label="關閉提示">×</button>
+    </div>
   `;
 }
 
@@ -2363,6 +2482,7 @@ function kidAchievementsView({ child, badges, skillMissions, streak }) {
 function kidCollectionView({ child, ownedCards }) {
   const stars = child.stars || 0;
   const packProgress = Math.min(100, Math.round((stars / 3) * 100));
+  const dailyPacksLeft = dailyPacksRemaining(child.id);
   const allCards = collectionCards(child.id);
   const visibleCards = filteredCollectionCards(child.id);
   const typeOptions = [
@@ -2389,12 +2509,14 @@ function kidCollectionView({ child, ownedCards }) {
         <span class="tag">${icon("card")} 任務卡包</span>
         <h2>${ownedCards.length}/${cardCatalog.length} 已發現</h2>
         <p class="muted">探索星：${child.stars || 0} · 成長糖果：${child.candies || 0}</p>
+        <p class="muted daily-pack-line">今日已開 ${DAILY_REWARDS.packLimit - dailyPacksLeft}/${DAILY_REWARDS.packLimit} 包</p>
       </div>
       <div class="pack-box">
         <div class="pack-art">${icon("card")}</div>
         <strong>${stars}/3 探索星</strong>
         <div class="pack-progress"><span style="--value:${packProgress}%"></span></div>
-        <button class="button primary" ${stars >= 3 ? "" : "disabled"} onclick="openCardPack()">開卡包</button>
+        <button class="button primary" ${stars >= 3 && dailyPacksLeft > 0 ? "" : "disabled"} onclick="openCardPack()">${dailyPacksLeft > 0 ? "開卡包" : "今天已探索好多"}</button>
+        <small class="muted daily-pack-hint">${dailyPacksLeft > 0 ? `今天還可以開 ${dailyPacksLeft} 包` : "明天再開新一包"}</small>
       </div>
     </section>
     <section class="panel">
@@ -3061,15 +3183,20 @@ function finalizeTask(taskId) {
     const task = state.tasks.find((item) => item.id === taskId);
     const child = selectedChild();
     state.completions.push({ id: uid("done"), taskId, date: todayKey(), delayType: state.activeDelayType, createdAt: new Date().toISOString() });
-    child.xp = (child.xp || 0) + (task?.xp || 0);
+    const award = applyDailyXpAward(child.id, task?.xp || 0);
+    child.xp = (child.xp || 0) + award.granted;
     child.stars = (child.stars || 0) + 1;
     child.streak = calculateStreak(child.id);
+    const record = getDailyRewardRecord(child.id);
+    const packsLeft = Math.max(0, DAILY_REWARDS.packLimit - (record.packsOpened || 0));
     state.taskCelebration = {
       taskTitle: task?.title || "小任務",
-      xp: task?.xp || 0,
+      xp: award.granted,
+      xpCapped: award.capped,
       stars: child.stars || 0,
       streak: child.streak || 0,
       canOpenPack: (child.stars || 0) >= 3,
+      packsLeft,
       hasSkillMission: activeSkillMissionCount(child.id) > 0,
     };
   }
@@ -3119,6 +3246,13 @@ function taskCelebrationModal() {
         <span class="tag">${icon("star")} 任務完成</span>
         <h2 id="celebration-title">${esc(celebration.taskTitle)} 做到了</h2>
         <p class="muted">每一次願意開始，都是在替自己的小島加一點光。</p>
+        ${
+          celebration.xpCapped
+            ? `<p class="muted celebration-xp-note">今天的 XP 已收集完成，小島也會記得你的努力。</p>`
+            : celebration.xp === 0
+              ? `<p class="muted celebration-xp-note">今天的 XP 已收集完成，但仍完成了一次真正的小任務。</p>`
+              : ""
+        }
         <div class="celebration-metrics">
           <article>
             <strong>+${celebration.xp}</strong>
@@ -3134,7 +3268,8 @@ function taskCelebrationModal() {
           </article>
         </div>
         <div class="celebration-actions">
-          ${celebration.canOpenPack ? `<button class="button primary" onclick="openPackFromCelebration()">立即開卡包</button>` : ""}
+          ${celebration.canOpenPack && celebration.packsLeft > 0 ? `<button class="button primary" onclick="openPackFromCelebration()">立即開卡包</button>` : ""}
+          ${celebration.canOpenPack && celebration.packsLeft <= 0 ? `<p class="muted celebration-pack-note">今天已開 ${DAILY_REWARDS.packLimit}/${DAILY_REWARDS.packLimit} 包，明天再試新發現。</p>` : ""}
           ${celebration.hasSkillMission ? `<button class="button" onclick="viewSkillMissionFromCelebration()">看看能力任務</button>` : ""}
           <button class="button" onclick="closeTaskCelebration()">回到小任務島</button>
         </div>
@@ -3555,6 +3690,9 @@ function overviewTab() {
   const latestCards = latestUnlockedCards(child.id);
   const doneToday = tasks.filter((task) => isDoneToday(task.id)).length;
   const remainingTasks = tasks.filter((task) => !isDoneToday(task.id));
+  const dailyXpRecord = getDailyRewardRecord(child.id);
+  const dailyXpEarned = Math.min(dailyXpRecord.xpEarned || 0, DAILY_REWARDS.xpLimit);
+  const dailyPacksOpened = dailyXpRecord.packsOpened || 0;
   const nextTask = remainingTasks[0] || null;
   const support = parentSupportSuggestion(child, mood, nextTask, rate);
   return `
@@ -3600,6 +3738,7 @@ function overviewTab() {
           <div class="parent-focus-tags">
             <span>${icon("sprout")} ${openSkillMissions} 個能力任務</span>
             <span>${icon("card")} ${collectionFor(child.id).length} 張收藏</span>
+            <span>${icon("card")} 今日已開 ${dailyPacksOpened}/${DAILY_REWARDS.packLimit} 包</span>
           </div>
         </aside>
       </section>
@@ -3609,7 +3748,8 @@ function overviewTab() {
       <section class="parent-metrics-grid">
         ${parentMetricCard("今日完成率", `${rate}%`, `${doneToday}/${tasks.length} 個任務完成`, "gold")}
         ${parentMetricCard("本週完成", week.total, "過去 7 天的總完成次數", "mint")}
-        ${parentMetricCard("累積 XP", child.xp || 0, "孩子已累積的成長分數", "sky")}
+        ${parentMetricCard("今日 XP 入帳", `${dailyXpEarned}/${DAILY_REWARDS.xpLimit}`, `今天實際入帳的 XP`, "mint")}
+        ${parentMetricCard("累積 XP", child.xp || 0, `孩子已累積的成長分數`, "sky")}
         ${parentMetricCard("探索星", child.stars || 0, "再集滿 3 粒可再開卡包", "rose")}
       </section>
 
