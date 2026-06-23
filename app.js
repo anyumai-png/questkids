@@ -25,6 +25,45 @@ function weekdayLabel(date) {
     weekday: "short",
   }).format(date);
 }
+
+const WEEKDAY_LABELS_SHORT = ["日", "一", "二", "三", "四", "五", "六"];
+const WEEKDAY_LABELS_LONG = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+const WEEKDAY_ALL = [0, 1, 2, 3, 4, 5, 6];
+const WEEKDAY_WEEKDAY = [1, 2, 3, 4, 5];
+const WEEKDAY_WEEKEND = [0, 6];
+
+function todayWeekdayIndex() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Hong_Kong",
+    weekday: "short",
+  }).formatToParts(new Date());
+  const value = parts.find((part) => part.type === "weekday")?.value || "Sun";
+  const map = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return map[value] ?? 0;
+}
+
+function normalizeWeekdays(value) {
+  if (!Array.isArray(value)) return [...WEEKDAY_ALL];
+  const set = new Set(value.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6));
+  if (!set.size) return [...WEEKDAY_ALL];
+  return [...set].sort((a, b) => a - b);
+}
+
+function isTaskScheduledToday(task) {
+  if (!task || !task.active) return false;
+  const days = normalizeWeekdays(task.weekdays);
+  return days.includes(todayWeekdayIndex());
+}
+
+function summarizeWeekdays(value) {
+  const days = normalizeWeekdays(value);
+  if (days.length === 7) return "每天";
+  const isWeekday = WEEKDAY_WEEKDAY.every((d) => days.includes(d)) && !days.includes(0) && !days.includes(6);
+  const isWeekend = days.length === 2 && days.includes(0) && days.includes(6);
+  if (isWeekday) return "平日";
+  if (isWeekend) return "週末";
+  return days.map((d) => WEEKDAY_LABELS_LONG[d]).join("、");
+}
 const uid = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
 
 function esc(value) {
@@ -522,6 +561,7 @@ const demoState = () => {
         steps: ["把書包放到桌上", "按明天時間表拿書本", "把水壺和功課袋放進書包"],
         active: true,
         required: true,
+        weekdays: [...WEEKDAY_ALL],
       },
       {
         id: uid("task"),
@@ -534,6 +574,7 @@ const demoState = () => {
         steps: ["坐到書桌前", "拿出今天第一份功課", "只做第一題或第一行"],
         active: true,
         required: true,
+        weekdays: [...WEEKDAY_WEEKDAY],
       },
       {
         id: uid("task"),
@@ -546,6 +587,7 @@ const demoState = () => {
         steps: ["先拿起地上的衣物", "把玩具放回同一個盒", "清出桌面一小角"],
         active: true,
         required: true,
+        weekdays: [...WEEKDAY_ALL],
       },
       {
         id: uid("task"),
@@ -558,6 +600,7 @@ const demoState = () => {
         steps: ["把燈光調暗", "選一件舒服睡衣", "做三次慢慢呼吸"],
         active: true,
         required: false,
+        weekdays: [...WEEKDAY_ALL],
       },
     ],
     completions: [],
@@ -628,6 +671,7 @@ function migrateState(saved) {
   merged.tasks = merged.tasks.map((task) => ({
     ...task,
     required: typeof task.required === "boolean" ? task.required : true,
+    weekdays: normalizeWeekdays(task.weekdays),
   }));
   if (!merged.children.length) return demoState();
   if (!merged.children.some((child) => child.id === merged.selectedChildId)) {
@@ -638,6 +682,7 @@ function migrateState(saved) {
 }
 
 function saveState() {
+  if (state.selectedChildId) pruneDailyTaskOrder(state.selectedChildId);
   const clean = { ...state, timer: { running: false, secondsLeft: 0, totalSeconds: 0, intervalId: null } };
   localStorage.setItem(STORE_KEY, JSON.stringify(clean));
 }
@@ -656,12 +701,16 @@ function childTasks(childId = selectedChild()?.id) {
   return allChildTasks(childId).filter((task) => task.active);
 }
 
+function todayChildTasks(childId = selectedChild()?.id) {
+  return childTasks(childId).filter(isTaskScheduledToday);
+}
+
 function dailyTaskOrderKey(childId = selectedChild()?.id) {
   return `${childId}:${todayKey()}`;
 }
 
 function orderedChildTasks(childId = selectedChild()?.id) {
-  const tasks = childTasks(childId);
+  const tasks = todayChildTasks(childId);
   const taskById = new Map(tasks.map((task) => [task.id, task]));
   const savedOrder = state.dailyTaskOrders?.[dailyTaskOrderKey(childId)] || [];
   const ordered = savedOrder.map((taskId) => taskById.get(taskId)).filter(Boolean);
@@ -669,8 +718,18 @@ function orderedChildTasks(childId = selectedChild()?.id) {
   return [...ordered, ...tasks.filter((task) => !knownIds.has(task.id))];
 }
 
+function pruneDailyTaskOrder(childId = selectedChild()?.id) {
+  const key = dailyTaskOrderKey(childId);
+  const savedOrder = state.dailyTaskOrders?.[key];
+  if (!Array.isArray(savedOrder) || !savedOrder.length) return;
+  const validIds = new Set(todayChildTasks(childId).map((task) => task.id));
+  const filtered = savedOrder.filter((taskId) => validIds.has(taskId));
+  if (filtered.length === savedOrder.length) return;
+  state.dailyTaskOrders[key] = filtered;
+}
+
 function requiredChildTasks(childId = selectedChild()?.id) {
-  const tasks = childTasks(childId);
+  const tasks = todayChildTasks(childId);
   const required = tasks.filter((task) => task.required);
   return required.length ? required : tasks;
 }
@@ -695,7 +754,7 @@ function isDoneToday(taskId) {
 }
 
 function todayCompletionRate(childId = selectedChild()?.id) {
-  const tasks = childTasks(childId);
+  const tasks = todayChildTasks(childId);
   if (!tasks.length) return 0;
   const done = tasks.filter((task) => isDoneToday(task.id)).length;
   return Math.round((done / tasks.length) * 100);
@@ -1033,6 +1092,7 @@ function icon(name) {
     bubble: "🫧",
     towel: "🧺",
     rice: "🍙",
+    calendar: "🗓️",
   };
   return icons[name] || name?.slice(0, 1)?.toUpperCase() || "*";
 }
@@ -1117,6 +1177,8 @@ function render() {
   initFloatingWidgets();
   initLiveClock();
   initMagicPreview();
+  initKidTaskPlanner();
+  initTaskWeekdayToggles();
 }
 
 function cardRevealModal() {
@@ -1691,7 +1753,7 @@ function zoneForTask(task) {
 
 function zoneStats(childId = selectedChild()?.id) {
   return zoneCatalog.map((zone) => {
-    const tasks = childTasks(childId).filter((task) => zoneForTask(task).id === zone.id);
+    const tasks = todayChildTasks(childId).filter((task) => zoneForTask(task).id === zone.id);
     const done = tasks.filter((task) => isDoneToday(task.id)).length;
     return {
       ...zone,
@@ -1703,7 +1765,7 @@ function zoneStats(childId = selectedChild()?.id) {
 }
 
 function nextTaskForZone(zoneId, childId = selectedChild()?.id) {
-  return childTasks(childId).find((task) => zoneForTask(task).id === zoneId && !isDoneToday(task.id));
+  return todayChildTasks(childId).find((task) => zoneForTask(task).id === zoneId && !isDoneToday(task.id));
 }
 
 function islandMap(options = {}) {
@@ -2536,20 +2598,22 @@ function taskMiniCard(task) {
 function taskPlanningCard(task, index, total) {
   const done = isDoneToday(task.id);
   const zone = zoneForTask(task);
+  const safeTitle = esc(task.title);
   return `
-    <article class="mini-task planning ${done ? "done" : ""}">
+    <article class="mini-task planning ${done ? "done" : ""}" data-task-id="${task.id}" data-planner-row="true">
+      <button type="button" class="kid-task-drag-handle" data-planner-handle="true" aria-label="拖動以重新排${safeTitle}" title="拖動以重新排序">≡</button>
       <div class="kid-task-order">${index + 1}</div>
       <div class="task-icon">${done ? "OK" : icon(task.icon)}</div>
       <div class="planning-task-copy">
         <div class="mini-task-title">
-          <h3>${esc(task.title)}</h3>
+          <h3>${safeTitle}</h3>
           <span class="task-importance ${task.required ? "required" : "optional"}">${task.required ? "必須" : "自選"}</span>
         </div>
         <small>${icon(zone.icon)} ${zone.name} · ${task.minutes} 分鐘${done ? " · 已完成" : ""}</small>
       </div>
       <div class="kid-task-order-actions">
-        <button type="button" onclick="moveKidTask('${task.id}', -1)" aria-label="將${esc(task.title)}排前" ${index === 0 ? "disabled" : ""}>↑</button>
-        <button type="button" onclick="moveKidTask('${task.id}', 1)" aria-label="將${esc(task.title)}排後" ${index === total - 1 ? "disabled" : ""}>↓</button>
+        <button type="button" onclick="moveKidTask('${task.id}', -1)" aria-label="將${safeTitle}排前" ${index === 0 ? "disabled" : ""}>↑</button>
+        <button type="button" onclick="moveKidTask('${task.id}', 1)" aria-label="將${safeTitle}排後" ${index === total - 1 ? "disabled" : ""}>↓</button>
       </div>
     </article>
   `;
@@ -2572,6 +2636,23 @@ function moveKidTask(taskId, direction) {
   if (currentIndex < 0 || nextIndex < 0 || nextIndex >= tasks.length) return;
   [tasks[currentIndex], tasks[nextIndex]] = [tasks[nextIndex], tasks[currentIndex]];
   state.dailyTaskOrders[dailyTaskOrderKey(child.id)] = tasks.map((task) => task.id);
+  saveState();
+  render();
+}
+
+function reorderKidTask(taskId, targetIndex) {
+  const child = selectedChild();
+  if (!child) return;
+  const tasks = orderedChildTasks(child.id);
+  if (!tasks.length) return;
+  const currentIndex = tasks.findIndex((task) => task.id === taskId);
+  if (currentIndex < 0) return;
+  let nextIndex = Math.max(0, Math.min(tasks.length - 1, Number(targetIndex)));
+  if (nextIndex === currentIndex) return;
+  const ordered = [...tasks];
+  const [moved] = ordered.splice(currentIndex, 1);
+  ordered.splice(nextIndex, 0, moved);
+  state.dailyTaskOrders[dailyTaskOrderKey(child.id)] = ordered.map((task) => task.id);
   saveState();
   render();
 }
@@ -2895,6 +2976,19 @@ function initMagicPreview() {
   document.querySelectorAll("[data-magic-preview-form]").forEach((form) => updateMagicPreview(form));
 }
 
+function initTaskWeekdayToggles() {
+  document.querySelectorAll("[data-task-weekday]").forEach((button) => {
+    if (button.dataset.bound === "true") return;
+    button.dataset.bound = "true";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      const taskId = button.dataset.taskWeekday;
+      const weekday = button.dataset.weekday;
+      toggleTaskWeekday(taskId, weekday);
+    });
+  });
+}
+
 function updateTimerDisplay() {
   const display = document.querySelector("[data-timer-display]");
   if (!display) return;
@@ -3105,6 +3199,107 @@ function returnIslandFromPause() {
   state.kidTab = "island";
   saveState();
   render();
+}
+
+function initKidTaskPlanner() {
+  if (!state.kidPlanningMode || state.kidZoneFocus) return;
+  const list = document.querySelector(".mini-task-list");
+  if (!list) return;
+  const rows = Array.from(list.querySelectorAll("[data-planner-row]"));
+  if (!rows.length) return;
+
+  rows.forEach((row) => {
+    const handle = row.querySelector("[data-planner-handle]");
+    if (!handle || handle.dataset.bound === "true") return;
+    handle.dataset.bound = "true";
+
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== undefined && event.button !== 0) return;
+      event.preventDefault();
+
+      const id = row.dataset.taskId;
+      const liveRows = Array.from(list.querySelectorAll("[data-planner-row]"));
+      const startIndex = liveRows.findIndex((r) => r === row);
+      if (startIndex < 0) return;
+      let currentIndex = startIndex;
+      let active = true;
+      let moved = false;
+      let startX = 0;
+      let startY = 0;
+      const placeholder = document.createElement("div");
+      placeholder.className = "planner-placeholder";
+      placeholder.style.height = `${row.offsetHeight}px`;
+      list.insertBefore(placeholder, row);
+      row.classList.add("dragging");
+      handle.setPointerCapture?.(event.pointerId);
+      try { handle.style.touchAction = "none"; } catch (_) { /* noop */ }
+
+      const clearHighlights = () => {
+        liveRows.forEach((r) => r.classList.remove("drag-over"));
+      };
+
+      const computeIndexFromY = (clientY) => {
+        const otherRows = liveRows.filter((candidate) => candidate !== row);
+        const insertionIndex = otherRows.findIndex((candidate) => {
+          const rect = candidate.getBoundingClientRect();
+          return clientY < rect.top + rect.height / 2;
+        });
+        return insertionIndex < 0 ? otherRows.length : insertionIndex;
+      };
+
+      const applyPlaceholder = (targetIndex) => {
+        clearHighlights();
+        const otherRows = liveRows.filter((candidate) => candidate !== row);
+        const targetRow = otherRows[targetIndex] || null;
+        if (targetRow) targetRow.classList.add("drag-over");
+        const reference = targetRow || otherRows[otherRows.length - 1]?.nextSibling || null;
+        list.insertBefore(placeholder, reference);
+        currentIndex = targetIndex;
+      };
+
+      const onMove = (ev) => {
+        if (!active) return;
+        const dx = ev.clientX - startX;
+        const dy = ev.clientY - startY;
+        if (!moved && Math.hypot(dx, dy) > 6) moved = true;
+        if (!moved) return;
+        row.style.transform = `translate3d(0, ${dy}px, 0)`;
+        applyPlaceholder(computeIndexFromY(ev.clientY));
+      };
+
+      const finish = (commit) => {
+        if (!active) return;
+        active = false;
+        try { handle.releasePointerCapture?.(event.pointerId); } catch (_) { /* noop */ }
+        clearHighlights();
+        row.style.transform = "";
+        if (placeholder.parentNode === list) list.removeChild(placeholder);
+        row.classList.remove("dragging");
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onCancel);
+        handle.removeEventListener("lostpointercapture", onLostCapture);
+        if (commit && moved && currentIndex !== startIndex) {
+          reorderKidTask(id, currentIndex);
+        }
+      };
+
+      const onUp = () => finish(true);
+      const onCancel = () => finish(false);
+      const onLostCapture = () => finish(moved);
+
+      startX = event.clientX;
+      startY = event.clientY;
+      window.addEventListener("pointermove", onMove, { passive: false });
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
+      handle.addEventListener("lostpointercapture", onLostCapture);
+    });
+
+    handle.addEventListener("click", (event) => {
+      event.preventDefault();
+    });
+  });
 }
 
 function initMapInteractions() {
@@ -3353,7 +3548,7 @@ function overviewTab() {
   const child = selectedChild();
   if (!child) return `<div class="empty">請先新增孩子。</div>`;
   const rate = todayCompletionRate(child.id);
-  const tasks = childTasks(child.id);
+  const tasks = todayChildTasks(child.id);
   const week = weeklyStats(child.id);
   const mood = latestMoodFor(child.id);
   const openSkillMissions = activeSkillMissionCount(child.id);
@@ -3610,7 +3805,7 @@ function latestMoodFor(childId = selectedChild()?.id) {
 }
 
 function narratorGuideLine(child, route = state.route) {
-  const tasks = childTasks(child?.id);
+  const tasks = todayChildTasks(child?.id);
   const done = tasks.filter((task) => isDoneToday(task.id)).length;
   const focusMission = skillMissionsFor(child?.id).find((mission) => mission.status !== "unlocked");
   const activeTask = state.tasks.find((task) => task.id === state.activeTaskId);
@@ -3736,6 +3931,7 @@ function parentZoneCard(zone) {
 
 function parentTaskRow(task, index, total) {
   const done = isDoneToday(task.id);
+  const days = normalizeWeekdays(task.weekdays);
   return `
     <article class="parent-task-row ${done ? "done" : ""} ${task.active ? "" : "inactive"}">
       <div class="task-order-number">${index + 1}</div>
@@ -3746,6 +3942,12 @@ function parentTaskRow(task, index, total) {
           <span class="small-tag">${done ? "今天已完成" : `+${task.xp} XP`}</span>
         </div>
         <p class="muted">${esc(task.area)} · ${task.minutes} 分鐘 · ${task.steps?.length || 3} 個小步驟</p>
+        <p class="muted task-weekday-summary">${icon("calendar")} ${summarizeWeekdays(days)}</p>
+        <div class="task-weekday-row" role="group" aria-label="${esc(task.title)} 出現星期">
+          ${WEEKDAY_LABELS_SHORT.map((label, weekday) => `
+            <button type="button" class="task-weekday-pill ${days.includes(weekday) ? "on" : ""}" data-task-weekday="${task.id}" data-weekday="${weekday}" aria-pressed="${days.includes(weekday)}">${label}</button>
+          `).join("")}
+        </div>
         <label class="task-active-toggle">
           <input type="checkbox" ${task.active ? "checked" : ""} onchange="toggleTaskActive('${task.id}')" />
           <span>${task.active ? "今天顯示" : "已暫停安排"}</span>
@@ -3934,8 +4136,10 @@ function tasksTab() {
   const child = selectedChild();
   const tasks = allChildTasks(child.id);
   const activeTasks = tasks.filter((task) => task.active);
-  const activeMinutes = activeTasks.reduce((sum, task) => sum + Number(task.minutes || 0), 0);
-  const completed = activeTasks.filter((task) => isDoneToday(task.id)).length;
+  const todayTasks = activeTasks.filter(isTaskScheduledToday);
+  const activeMinutes = todayTasks.reduce((sum, task) => sum + Number(task.minutes || 0), 0);
+  const completed = todayTasks.filter((task) => isDoneToday(task.id)).length;
+  const todayLabel = WEEKDAY_LABELS_LONG[todayWeekdayIndex()];
   return `
     <div class="parent-shell">
       <section class="task-plan-summary">
@@ -3946,15 +4150,15 @@ function tasksTab() {
         </div>
         <div class="task-plan-metrics">
           <article>
-            <strong>${activeTasks.length}</strong>
-            <span>今日任務</span>
+            <strong>${todayTasks.length}</strong>
+            <span>今日任務（${todayLabel}）</span>
           </article>
           <article>
             <strong>${activeMinutes}</strong>
             <span>預計分鐘</span>
           </article>
           <article>
-            <strong>${completed}/${activeTasks.length}</strong>
+            <strong>${completed}/${todayTasks.length}</strong>
             <span>今天完成</span>
           </article>
         </div>
@@ -3966,7 +4170,7 @@ function tasksTab() {
               <span class="tag">${icon("book")} 任務管理</span>
               <h2>${esc(child.name)} 的任務節奏</h2>
             </div>
-            <span class="small-tag">${activeTasks.length}/${tasks.length} 個啟用</span>
+            <span class="small-tag">${todayTasks.length}/${tasks.length} 個今天有排程</span>
           </div>
           <div class="parent-task-list">
             ${tasks.map((task, index) => parentTaskRow(task, index, tasks.length)).join("") || `<div class="empty">未有任務。</div>`}
@@ -4022,6 +4226,24 @@ function toggleTaskRequired(taskId) {
   render();
 }
 
+function toggleTaskWeekday(taskId, weekday) {
+  const task = state.tasks.find((item) => item.id === taskId);
+  if (!task) return;
+  const day = Number(weekday);
+  if (!Number.isInteger(day) || day < 0 || day > 6) return;
+  const current = normalizeWeekdays(task.weekdays);
+  const set = new Set(current);
+  if (set.has(day)) {
+    if (set.size === 1) return;
+    set.delete(day);
+  } else {
+    set.add(day);
+  }
+  task.weekdays = [...set].sort((a, b) => a - b);
+  saveState();
+  render();
+}
+
 function addTask(event) {
   event.preventDefault();
   const data = new FormData(event.target);
@@ -4044,6 +4266,7 @@ function addTask(event) {
     steps: resolvedTaskSteps(title, area, manualSteps),
     active: true,
     required: data.get("required") === "on",
+    weekdays: [...WEEKDAY_ALL],
   });
   saveState();
   render();

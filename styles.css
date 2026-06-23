@@ -1513,11 +1513,61 @@ button:disabled,
 }
 
 .mini-task.planning {
-  grid-template-columns: 28px 46px minmax(0, 1fr) auto;
+  grid-template-columns: 24px 28px 46px minmax(0, 1fr) auto;
   cursor: default;
   background:
     linear-gradient(90deg, rgba(255, 238, 182, 0.32), transparent 42%),
     rgba(255, 255, 255, 0.84);
+}
+
+.kid-task-drag-handle {
+  display: grid;
+  width: 24px;
+  height: 32px;
+  place-items: center;
+  align-self: center;
+  border: 1px dashed rgba(74, 99, 84, 0.32);
+  border-radius: 8px;
+  color: #486158;
+  background: #f3faf3;
+  font-size: 16px;
+  font-weight: 950;
+  line-height: 1;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.kid-task-drag-handle:active,
+.kid-task-drag-handle:focus-visible {
+  cursor: grabbing;
+  background: #e2f3e4;
+  outline: none;
+}
+
+.mini-task.planning.dragging {
+  opacity: 0.92;
+  box-shadow: 0 12px 24px rgba(24, 33, 27, 0.18);
+  transform: scale(1.01);
+  background:
+    linear-gradient(90deg, rgba(255, 238, 182, 0.55), transparent 42%),
+    rgba(255, 255, 255, 0.96);
+  cursor: grabbing;
+  transition: transform 0.08s ease;
+}
+
+.mini-task.planning.drag-over {
+  border-color: rgba(74, 99, 84, 0.55);
+  box-shadow: inset 0 0 0 2px rgba(74, 99, 84, 0.45);
+}
+
+.planner-placeholder {
+  border: 2px dashed rgba(245, 175, 70, 0.65);
+  border-radius: 18px;
+  background: rgba(255, 240, 200, 0.45);
+  margin: 0;
 }
 
 .kid-task-order {
@@ -4303,6 +4353,50 @@ p {
   margin: 5px 0 10px;
 }
 
+.task-weekday-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 800;
+  color: #315848;
+}
+
+.task-weekday-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 12px;
+}
+
+.task-weekday-pill {
+  display: grid;
+  place-items: center;
+  min-width: 36px;
+  height: 32px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(74, 99, 84, 0.22);
+  background: #f3faf3;
+  color: #486158;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.task-weekday-pill.on {
+  background: #2f7d56;
+  color: #ffffff;
+  border-color: #2f7d56;
+  box-shadow: 0 2px 6px rgba(47, 125, 86, 0.25);
+}
+
+.task-weekday-pill:focus-visible {
+  outline: 2px solid #2f7d56;
+  outline-offset: 2px;
+}
+
 .task-active-toggle {
   display: inline-flex;
   align-items: center;
@@ -6763,12 +6857,25 @@ p {
   }
 
   .mini-task.planning {
-    grid-template-columns: 28px 44px minmax(0, 1fr) 34px;
-    gap: 7px;
+    grid-template-columns: 22px 26px 40px minmax(0, 1fr) 34px;
+    gap: 6px;
+    padding: 8px 8px;
+  }
+
+  .kid-task-drag-handle {
+    width: 22px;
+    height: 30px;
+    font-size: 14px;
+  }
+
+  .kid-task-order-actions {
+    gap: 4px;
   }
 
   .kid-task-order-actions button {
     width: 32px;
+    height: 28px;
+    font-size: 15px;
   }
 
   .task-plan-summary {
@@ -6827,6 +6934,18 @@ p {
     display: flex;
     margin-top: 8px;
     margin-left: 0;
+  }
+
+  .task-weekday-pill {
+    min-width: 32px;
+    height: 30px;
+    padding: 0 7px;
+    font-size: 12px;
+  }
+
+  .task-weekday-row {
+    gap: 5px;
+    margin: 4px 0 10px;
   }
 
   .achievement-hero {
