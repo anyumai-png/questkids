@@ -5,6 +5,12 @@ const DAILY_REWARDS = {
   packLimit: 2,
 };
 
+const CARD_PACK_RULES = {
+  costStars: 3,
+  skillGuaranteePacks: 10,
+  zoneGuaranteePacks: 5,
+};
+
 function dailyRewardKey(childId, dateKey) {
   return `${childId}::${dateKey}`;
 }
@@ -544,6 +550,7 @@ const demoState = () => {
     mapZoom: 1,
     timer: { running: false, secondsLeft: 0, totalSeconds: 0, intervalId: null },
     dailyRewards: {},
+    packLedger: {},
     children: [
       {
         id: childId,
@@ -636,7 +643,7 @@ const demoState = () => {
   };
 };
 
-const STORE_VERSION = 8;
+const STORE_VERSION = 9;
 let state = loadState();
 let liveClockIntervalId = null;
 let narratorAutoTimerId = null;
@@ -675,6 +682,9 @@ function migrateState(saved) {
   if (typeof merged.settings.onboardingComplete !== "boolean") merged.settings.onboardingComplete = Boolean(saved.children?.length);
   if (!merged.dailyRewards || typeof merged.dailyRewards !== "object" || Array.isArray(merged.dailyRewards)) {
     merged.dailyRewards = {};
+  }
+  if (!merged.packLedger || typeof merged.packLedger !== "object" || Array.isArray(merged.packLedger)) {
+    merged.packLedger = {};
   }
   if (!merged.settings.parentPin) merged.settings.parentPin = "1234";
   if (typeof merged.settings.parentVerified !== "boolean") merged.settings.parentVerified = false;
@@ -756,6 +766,33 @@ function registerPackOpened(childId, dateKey = todayKey()) {
   record.packsOpened = (record.packsOpened || 0) + 1;
   record.lastUpdated = new Date().toISOString();
   return true;
+}
+
+function ensurePackLedger(childId) {
+  if (!childId) return null;
+  if (!state.packLedger || typeof state.packLedger !== "object" || Array.isArray(state.packLedger)) {
+    state.packLedger = {};
+  }
+  const existing = state.packLedger[childId];
+  if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+    existing.totalOpened = Math.max(0, Number(existing.totalOpened) || 0);
+    existing.packsSinceNew = Math.max(0, Number(existing.packsSinceNew) || 0);
+    existing.packsSinceSkill = Math.max(0, Number(existing.packsSinceSkill) || 0);
+    if (!existing.zoneMisses || typeof existing.zoneMisses !== "object" || Array.isArray(existing.zoneMisses)) {
+      existing.zoneMisses = {};
+    }
+    if (!Array.isArray(existing.recentCards)) existing.recentCards = [];
+    return existing;
+  }
+  const created = {
+    totalOpened: 0,
+    packsSinceNew: 0,
+    packsSinceSkill: 0,
+    zoneMisses: {},
+    recentCards: [],
+  };
+  state.packLedger[childId] = created;
+  return created;
 }
 
 function setState(patch) {
@@ -936,9 +973,108 @@ function packPreviewStrip(childId = selectedChild()?.id) {
   `;
 }
 
+function latestCompletionZoneId(childId = selectedChild()?.id) {
+  const taskById = new Map(allChildTasks(childId).map((task) => [task.id, task]));
+  const latest = [...state.completions]
+    .filter((entry) => taskById.has(entry.taskId))
+    .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))[0];
+  if (latest) return zoneForTask(taskById.get(latest.taskId)).id;
+  const nextTask = orderedChildTasks(childId).find((task) => !isDoneToday(task.id)) || orderedChildTasks(childId)[0];
+  return nextTask ? zoneForTask(nextTask).id : "calm";
+}
+
+function packRuleStatus(childId = selectedChild()?.id) {
+  const ledger = ensurePackLedger(childId);
+  const owned = ownedCardIds(childId);
+  const unowned = cardCatalog.filter((card) => !owned.has(card.id));
+  const unownedSkills = unowned.filter((card) => card.type === "skill");
+  const focusZoneId = latestCompletionZoneId(childId);
+  const focusZone = zoneCatalog.find((zone) => zone.id === focusZoneId) || zoneCatalog[3];
+  const zoneMisses = Math.max(0, Number(ledger?.zoneMisses?.[focusZoneId]) || 0);
+  return {
+    ledger,
+    unowned,
+    unownedSkills,
+    focusZone,
+    newCardGuaranteed: unowned.length > 0,
+    skillCountdown: unownedSkills.length ? Math.max(1, CARD_PACK_RULES.skillGuaranteePacks - (ledger?.packsSinceSkill || 0)) : 0,
+    zoneCountdown: Math.max(1, CARD_PACK_RULES.zoneGuaranteePacks - zoneMisses),
+  };
+}
+
+function packCompassMarkup(childId = selectedChild()?.id) {
+  const status = packRuleStatus(childId);
+  const recent = (status.ledger?.recentCards || [])
+    .map((cardId) => cardCatalog.find((card) => card.id === cardId))
+    .filter(Boolean)
+    .slice(0, 3);
+  return `
+    <div class="pack-compass" aria-label="卡包透明規則">
+      <article>
+        <span>${icon("spark")}</span>
+        <strong>${status.newCardGuaranteed ? "下一包優先新收藏" : "全圖鑑已發現"}</strong>
+        <small>${status.unowned.length ? `還有 ${status.unowned.length} 張等你遇見` : "之後重複卡會升級"}</small>
+      </article>
+      <article>
+        <span>${icon("shoe")}</span>
+        <strong>${status.unownedSkills.length ? `${status.skillCountdown} 包內遇見能力卡` : "能力卡已全發現"}</strong>
+        <small>${status.unownedSkills.length ? "完成練習後解鎖能力" : "可以慢慢完成練習"}</small>
+      </article>
+      <article>
+        <span>${icon(status.focusZone.icon)}</span>
+        <strong>${status.focusZone.name} 線索</strong>
+        <small>${status.zoneCountdown} 包內優先出現相關卡</small>
+      </article>
+      ${
+        recent.length
+          ? `<div class="pack-recent">
+              <span>最近發現</span>
+              ${recent.map((card) => `<button type="button" onclick="openCollectionCard('${card.id}')">${icon(card.icon)} ${card.name}</button>`).join("")}
+            </div>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function choosePackCard(child) {
+  const childId = child?.id;
+  const status = packRuleStatus(childId);
+  const owned = ownedCardIds(childId);
+  const unowned = status.unowned;
+  const source = unowned.length ? unowned : cardCatalog;
+  const focusZoneId = status.focusZone.id;
+  const skillDue = status.unownedSkills.length && (status.ledger.packsSinceSkill || 0) >= CARD_PACK_RULES.skillGuaranteePacks - 1;
+  if (skillDue) {
+    const card = status.unownedSkills[0];
+    return { card, reason: "能力卡保底", focusZoneId };
+  }
+  const zoneCards = source.filter((card) => card.zone === focusZoneId && (!owned.has(card.id) || !unowned.length));
+  const zoneDue = zoneCards.length && (status.ledger.zoneMisses?.[focusZoneId] || 0) >= CARD_PACK_RULES.zoneGuaranteePacks - 1;
+  if (zoneDue) return { card: zoneCards[0], reason: `${status.focusZone.name} 保底`, focusZoneId };
+  const preferredTypes = ["skill", "place", "pet", "item", "food", "deco"];
+  const zonePreferred = zoneCards.sort((a, b) => preferredTypes.indexOf(a.type) - preferredTypes.indexOf(b.type))[0];
+  if (zonePreferred) return { card: zonePreferred, reason: `${status.focusZone.name} 線索`, focusZoneId };
+  const index = status.ledger.totalOpened % source.length;
+  return { card: source[index], reason: unowned.length ? "新收藏優先" : "卡片升級", focusZoneId };
+}
+
+function recordPackResult(childId, card, isNew, focusZoneId) {
+  const ledger = ensurePackLedger(childId);
+  ledger.totalOpened += 1;
+  ledger.packsSinceNew = isNew ? 0 : (ledger.packsSinceNew || 0) + 1;
+  ledger.packsSinceSkill = card.type === "skill" ? 0 : (ledger.packsSinceSkill || 0) + 1;
+  zoneCatalog.forEach((zone) => {
+    const current = Math.max(0, Number(ledger.zoneMisses?.[zone.id]) || 0);
+    ledger.zoneMisses[zone.id] = card.zone === zone.id ? 0 : current + 1;
+  });
+  if (focusZoneId && card.zone === focusZoneId) ledger.zoneMisses[focusZoneId] = 0;
+  ledger.recentCards = [card.id, ...(ledger.recentCards || []).filter((cardId) => cardId !== card.id)].slice(0, 5);
+}
+
 function openCardPack() {
   const child = selectedChild();
-  if (!child || (child.stars || 0) < 3) return;
+  if (!child || (child.stars || 0) < CARD_PACK_RULES.costStars) return;
   const remaining = dailyPacksRemaining(child.id);
   if (remaining <= 0) {
     setDailyRewardToast("今天已探索好多，明天再開新一包。");
@@ -951,17 +1087,15 @@ function openCardPack() {
 
 function revealCardPack() {
   const child = selectedChild();
-  if (!child || (child.stars || 0) < 3) return;
+  if (!child || (child.stars || 0) < CARD_PACK_RULES.costStars) return;
   if (!registerPackOpened(child.id)) {
     state.cardReveal = null;
     setDailyRewardToast("今天已探索好多，明天再開新一包。");
     return;
   }
-  child.stars -= 3;
-  const owned = ownedCardIds(child.id);
-  const unowned = cardCatalog.filter((card) => !owned.has(card.id));
-  const source = unowned.length ? unowned : cardCatalog;
-  const card = source[Math.floor(Math.random() * source.length)];
+  child.stars -= CARD_PACK_RULES.costStars;
+  const selection = choosePackCard(child);
+  const card = selection.card;
   let entry = state.collection.find((item) => item.childId === child.id && item.cardId === card.id);
   let duplicate = false;
   if (entry) {
@@ -974,7 +1108,8 @@ function revealCardPack() {
     state.collection.push(entry);
     if (card.type === "skill" && card.skillMission) createSkillMission(child.id, card);
   }
-  state.cardReveal = { phase: "reveal", cardId: card.id, duplicate, level: entry.level };
+  recordPackResult(child.id, card, !duplicate, selection.focusZoneId);
+  state.cardReveal = { phase: "reveal", cardId: card.id, duplicate, level: entry.level, reason: selection.reason };
   saveState();
   render();
 }
@@ -1289,6 +1424,7 @@ function cardRevealModal() {
             <span class="card-rarity rarity-${card.rarity}">${rarityLabel(card.rarity)}</span>
             <h2 id="card-title">${card.name}</h2>
           </div>
+          ${reveal.reason ? `<p class="card-reason">${esc(reveal.reason)} · 這次卡包照透明規則選出</p>` : ""}
           <p class="card-story">${card.story}</p>
           <div class="card-meta-row">
             <span>${icon(zoneCatalog.find((zone) => zone.id === card.zone)?.icon || "sprout")} ${cardZoneLabel(card)}</span>
@@ -1343,6 +1479,7 @@ function cardPackOpeningModal() {
           </div>
         </div>
         ${packPreviewStrip(child?.id)}
+        ${packCompassMarkup(child?.id)}
         <p class="muted">已發現 ${ownedCount}/${cardCatalog.length}。沒有失敗卡，每次都會讓圖鑑多一點進度。</p>
         <div class="row">
           <button class="button primary large" ${packsRemaining > 0 ? "" : "disabled"} onclick="revealCardPack()">${packsRemaining > 0 ? "打開卡包" : "今天已探索好多"}</button>
@@ -1360,7 +1497,10 @@ function closeCardReveal() {
 }
 
 function openCollectionCard(cardId) {
+  state.cardReveal = null;
+  state.taskCelebration = null;
   collectionDetailCardId = cardId;
+  saveState();
   render();
 }
 
@@ -1418,7 +1558,7 @@ function collectionCardDetailModal() {
           <div class="collection-detail-copy">
             <span class="tag">${owned ? "收藏故事" : "神秘線索"}</span>
             <h3>${owned ? card.name : `${typeLabel(card.type)}尚未發現`}</h3>
-            <p>${owned ? card.story : "繼續完成今日小任務，收集 3 顆探索星便可以打開卡包。"}</p>
+            <p>${owned ? card.story : `繼續完成今日小任務，收集 ${CARD_PACK_RULES.costStars} 顆探索星便可以打開卡包。`}</p>
             ${
               owned
                 ? `<div class="detail-fact">
@@ -2153,8 +2293,8 @@ function kidIslandView({ child, tasks, rate, mood }) {
   const requiredTasks = requiredChildTasks(child.id);
   const requiredDone = requiredTasks.filter((task) => isDoneToday(task.id)).length;
   const stars = child.stars || 0;
-  const packProgress = Math.min(100, Math.round((stars / 3) * 100));
-  const starsNeeded = Math.max(0, 3 - stars);
+  const packProgress = Math.min(100, Math.round((stars / CARD_PACK_RULES.costStars) * 100));
+  const starsNeeded = Math.max(0, CARD_PACK_RULES.costStars - stars);
   const dailyXpRecord = getDailyRewardRecord(child.id);
   const dailyPacksLeft = dailyPacksRemaining(child.id);
   const focusMission = skillMissionsFor(child.id).find((mission) => mission.status !== "unlocked");
@@ -2289,12 +2429,13 @@ function kidIslandView({ child, tasks, rate, mood }) {
           <span>${icon("shoe")} 能力</span>
         </div>
         ${packPreviewStrip(child.id)}
+        ${packCompassMarkup(child.id)}
       </div>
       <div class="pack-box">
         <div class="pack-art">${icon("card")}</div>
-        <strong>${stars}/3 探索星</strong>
+        <strong>${stars}/${CARD_PACK_RULES.costStars} 探索星</strong>
         <div class="pack-progress"><span style="--value:${packProgress}%"></span></div>
-        <button class="button primary" ${stars >= 3 && dailyPacksLeft > 0 ? "" : "disabled"} onclick="openCardPack()">${dailyPacksLeft > 0 ? "開卡包" : "今天已探索好多"}</button>
+        <button class="button primary" ${stars >= CARD_PACK_RULES.costStars && dailyPacksLeft > 0 ? "" : "disabled"} onclick="openCardPack()">${dailyPacksLeft > 0 ? "開卡包" : "今天已探索好多"}</button>
         <small class="muted daily-pack-hint">${dailyPacksLeft > 0 ? `今天還可以開 ${dailyPacksLeft} 包` : "明天再開新一包"}</small>
       </div>
     </section>
@@ -2442,7 +2583,7 @@ function kidAchievementsView({ child, badges, skillMissions, streak }) {
             : `<div class="achievement-skill-empty">
                 <div class="empty-skill-art">${icon("shoe")} ${icon("paper")} ${icon("knot")}</div>
                 <strong>能力任務仍在卡包中等你</strong>
-                <p>完成 3 個小任務收集探索星，就有機會遇到綁鞋帶、摺紙和繩結等生活能力。</p>
+                <p>完成小任務收集探索星，就有機會遇到綁鞋帶、摺紙和繩結等生活能力。</p>
                 <button class="button primary" onclick="setKidTab('island')">返回小島做任務</button>
               </div>`
         }
@@ -2481,7 +2622,7 @@ function kidAchievementsView({ child, badges, skillMissions, streak }) {
 
 function kidCollectionView({ child, ownedCards }) {
   const stars = child.stars || 0;
-  const packProgress = Math.min(100, Math.round((stars / 3) * 100));
+  const packProgress = Math.min(100, Math.round((stars / CARD_PACK_RULES.costStars) * 100));
   const dailyPacksLeft = dailyPacksRemaining(child.id);
   const allCards = collectionCards(child.id);
   const visibleCards = filteredCollectionCards(child.id);
@@ -2513,11 +2654,21 @@ function kidCollectionView({ child, ownedCards }) {
       </div>
       <div class="pack-box">
         <div class="pack-art">${icon("card")}</div>
-        <strong>${stars}/3 探索星</strong>
+        <strong>${stars}/${CARD_PACK_RULES.costStars} 探索星</strong>
         <div class="pack-progress"><span style="--value:${packProgress}%"></span></div>
-        <button class="button primary" ${stars >= 3 && dailyPacksLeft > 0 ? "" : "disabled"} onclick="openCardPack()">${dailyPacksLeft > 0 ? "開卡包" : "今天已探索好多"}</button>
+        <button class="button primary" ${stars >= CARD_PACK_RULES.costStars && dailyPacksLeft > 0 ? "" : "disabled"} onclick="openCardPack()">${dailyPacksLeft > 0 ? "開卡包" : "今天已探索好多"}</button>
         <small class="muted daily-pack-hint">${dailyPacksLeft > 0 ? `今天還可以開 ${dailyPacksLeft} 包` : "明天再開新一包"}</small>
       </div>
+    </section>
+    <section class="panel pack-rules-panel">
+      <div class="section-title">
+        <div>
+          <span class="tag">${icon("compass")} 卡包羅盤</span>
+          <h2>下一包不是黑箱</h2>
+          <p class="muted">小任務島會優先帶你遇見新收藏，並保留能力卡和最近任務區域的線索。</p>
+        </div>
+      </div>
+      ${packCompassMarkup(child.id)}
     </section>
     <section class="panel">
       <div class="section-title">
@@ -3259,7 +3410,7 @@ function taskCelebrationModal() {
             <span>XP</span>
           </article>
           <article>
-            <strong>${celebration.stars}/3</strong>
+            <strong>${celebration.stars}/${CARD_PACK_RULES.costStars}</strong>
             <span>探索星</span>
           </article>
           <article>
