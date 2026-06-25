@@ -1411,6 +1411,17 @@ function petReactionForCard(card, context = "pack") {
   };
 }
 
+function ownedPetCompanions(childId = selectedChild()?.id, limit = 3) {
+  const pets = collectionCards(childId)
+    .filter((card) => card.owned && card.type === "pet")
+    .sort((a, b) => {
+      if (a.id === "pet_lumo") return -1;
+      if (b.id === "pet_lumo") return 1;
+      return (a.owned?.unlockedAt || "").localeCompare(b.owned?.unlockedAt || "") * -1;
+    });
+  return pets.length ? pets.slice(0, limit) : cardCatalog.filter((card) => card.id === "pet_lumo");
+}
+
 function characterReactionCard(context = "idle", options = {}) {
   const reaction = lumoReaction(context, options);
   const pet = options.petCard ? petReactionForCard(options.petCard, context) : null;
@@ -1429,6 +1440,48 @@ function characterReactionCard(context = "idle", options = {}) {
         ${pet ? `<div class="pet-reaction"><span>${esc(pet.face)}</span><small>${esc(pet.name)}：${esc(pet.line)}</small></div>` : ""}
       </div>
     </aside>
+  `;
+}
+
+function kidCompanionStage({ child, focusTask, mood, requiredDone, requiredTotal }) {
+  const context = focusTask ? "start" : "complete";
+  const reaction = lumoReaction(context, { taskTitle: focusTask?.title });
+  const pets = ownedPetCompanions(child.id, 3);
+  const firstStep = focusTask ? firstStepForTask(focusTask) : "今天可以慢慢休息一下";
+  const moodCopy = mood ? `今天心情是「${mood.label}」，夥伴會用這個速度陪你。` : "還未選心情也可以，先由最小一步開始。";
+  return `
+    <section class="panel companion-stage">
+      <div class="companion-stage-main">
+        <span class="tag">${icon("lumo")} 今日陪伴隊</span>
+        <h2>${focusTask ? "夥伴已經準備好第一步" : "今天的小島亮起來了"}</h2>
+        <p class="muted">${moodCopy}</p>
+        <div class="companion-lumo-line">
+          ${lumoFaceMarkup(reaction, "medium")}
+          <div>
+            <strong>Lumo：${esc(reaction.line)}</strong>
+            <span>${focusTask ? `下一步：${esc(firstStep)}` : `必須任務 ${requiredDone}/${requiredTotal}`}</span>
+          </div>
+        </div>
+        <div class="companion-actions">
+          ${focusTask ? `<button class="button primary" onclick="startTask('${focusTask.id}')">和夥伴開始</button>` : ""}
+          <button class="button ghost" onclick="setKidTab('collection')">看看夥伴</button>
+        </div>
+      </div>
+      <div class="companion-pet-row" aria-label="今日陪伴的寵物">
+        ${pets
+          .map((card) => {
+            const pet = petReactionForCard(card, context);
+            return `
+              <article class="companion-pet-card card-${card.id}">
+                <span class="companion-pet-face">${esc(pet?.face || icon(card.icon))}</span>
+                <strong>${esc(card.name)}</strong>
+                <small>${esc(pet?.line || card.story)}</small>
+              </article>
+            `;
+          })
+          .join("")}
+      </div>
+    </section>
   `;
 }
 
@@ -2640,9 +2693,11 @@ function kidIslandView({ child, tasks, rate, mood }) {
             </div>
           </section>
         `
-    }
+	    }
 
-    <section class="task-dashboard">
+	    ${kidCompanionStage({ child, focusTask, mood, requiredDone, requiredTotal: requiredTasks.length })}
+
+	    <section class="task-dashboard">
       <div class="panel today-card">
         <div class="section-title">
           <div>
