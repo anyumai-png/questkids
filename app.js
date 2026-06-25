@@ -183,6 +183,39 @@ const badgeCatalog = [
   { id: "weekly_try", name: "回來繼續", rule: "連續 7 天有完成任務", icon: "lighthouse" },
 ];
 
+const adventurePaths = [
+  {
+    id: "shell",
+    title: "尋找晨光貝殼",
+    icon: "shell",
+    zone: "morning",
+    color: "gold",
+    hook: "碼頭傳來叮一聲，像有一枚會發光的貝殼在等你。",
+    reward: "找到貝殼線索",
+    lumo: "我們不用急，只要完成第一個小任務，海邊就會亮起一點。",
+  },
+  {
+    id: "seed",
+    title: "種下發光種子",
+    icon: "sprout",
+    zone: "study",
+    color: "green",
+    hook: "學習樹林有一顆小種子，聽說它只會被努力的一小步叫醒。",
+    reward: "讓種子發芽",
+    lumo: "先做一點點，樹林就會知道你來過。",
+  },
+  {
+    id: "beacon",
+    title: "點亮海灣燈塔",
+    icon: "lighthouse",
+    zone: "calm",
+    color: "blue",
+    hook: "遠處燈塔有點暗，Lumo 想請你幫它重新亮起來。",
+    reward: "點亮燈塔光",
+    lumo: "休息也可以是力量。慢慢完成，燈塔會等你。",
+  },
+];
+
 const parentMessagePresets = [
   "我看到你願意開始，這已經很不容易。",
   "不用急著做完，我陪你慢慢做第一步。",
@@ -551,6 +584,7 @@ const demoState = () => {
     timer: { running: false, secondsLeft: 0, totalSeconds: 0, intervalId: null },
     dailyRewards: {},
     packLedger: {},
+    adventureChoices: {},
     children: [
       {
         id: childId,
@@ -643,7 +677,7 @@ const demoState = () => {
   };
 };
 
-const STORE_VERSION = 9;
+const STORE_VERSION = 10;
 let state = loadState();
 let liveClockIntervalId = null;
 let narratorAutoTimerId = null;
@@ -685,6 +719,9 @@ function migrateState(saved) {
   }
   if (!merged.packLedger || typeof merged.packLedger !== "object" || Array.isArray(merged.packLedger)) {
     merged.packLedger = {};
+  }
+  if (!merged.adventureChoices || typeof merged.adventureChoices !== "object" || Array.isArray(merged.adventureChoices)) {
+    merged.adventureChoices = {};
   }
   if (!merged.settings.parentPin) merged.settings.parentPin = "1234";
   if (typeof merged.settings.parentVerified !== "boolean") merged.settings.parentVerified = false;
@@ -2282,6 +2319,116 @@ function landscapeTaskItem(task) {
   `;
 }
 
+function adventureChoiceKey(childId = selectedChild()?.id, date = todayKey()) {
+  return `${childId}:${date}`;
+}
+
+function selectedAdventurePath(childId = selectedChild()?.id) {
+  const pathId = state.adventureChoices?.[adventureChoiceKey(childId)];
+  return adventurePaths.find((path) => path.id === pathId) || null;
+}
+
+function chooseAdventurePath(pathId) {
+  const child = selectedChild();
+  if (!child || !adventurePaths.some((path) => path.id === pathId)) return;
+  if (!state.adventureChoices || typeof state.adventureChoices !== "object" || Array.isArray(state.adventureChoices)) {
+    state.adventureChoices = {};
+  }
+  state.adventureChoices[adventureChoiceKey(child.id)] = pathId;
+  state.kidZoneFocus = null;
+  wakeNarrator("guide");
+  saveState();
+  render();
+}
+
+function adventureProgress(child, tasks) {
+  const doneCount = tasks.filter((task) => isDoneToday(task.id)).length;
+  const requiredTasks = requiredChildTasks(child.id);
+  const requiredDone = requiredTasks.filter((task) => isDoneToday(task.id)).length;
+  const openedPacks = getDailyRewardRecord(child.id).packsOpened || 0;
+  return {
+    doneCount,
+    requiredDone,
+    openedPacks,
+    milestones: [
+      { label: "選定今日冒險", done: Boolean(selectedAdventurePath(child.id)) },
+      { label: "完成第一個小任務", done: doneCount >= 1 },
+      { label: "集齊卡包線索", done: (child.stars || 0) >= CARD_PACK_RULES.costStars || openedPacks > 0 },
+    ],
+  };
+}
+
+function adventurePanel(child, tasks) {
+  const selected = selectedAdventurePath(child.id);
+  const progress = adventureProgress(child, tasks);
+  const completeCount = progress.milestones.filter((item) => item.done).length;
+  const percent = Math.round((completeCount / progress.milestones.length) * 100);
+  if (!selected) {
+    return `
+      <section class="daily-adventure-panel choose">
+        <div class="adventure-head">
+          <span class="tag">${icon("compass")} 今日島嶼故事</span>
+          <h2>今天想追哪一條線索？</h2>
+          <p>先選一個故事方向，今日任務就會變成小島冒險的一部分。</p>
+        </div>
+        <div class="adventure-choice-grid">
+          ${adventurePaths
+            .map(
+              (path) => `
+                <button type="button" class="adventure-choice ${path.color}" onclick="chooseAdventurePath('${path.id}')">
+                  <span class="adventure-choice-art">${icon(path.icon)}</span>
+                  <strong>${path.title}</strong>
+                  <small>${path.hook}</small>
+                  <em>選這條線索</em>
+                </button>
+              `,
+            )
+            .join("")}
+        </div>
+      </section>
+    `;
+  }
+  const nextTask = tasks.find((task) => !isDoneToday(task.id));
+  return `
+    <section class="daily-adventure-panel active ${selected.color}">
+      <div class="adventure-scene" aria-hidden="true">
+        <span class="adventure-orb">${icon(selected.icon)}</span>
+        <span class="adventure-lumo">${icon("lumo")}</span>
+      </div>
+      <div class="adventure-copy">
+        <span class="tag">${icon(selected.icon)} 今日島嶼故事</span>
+        <h2>${selected.title}</h2>
+        <p>${selected.hook}</p>
+        <blockquote>${selected.lumo}</blockquote>
+      </div>
+      <div class="adventure-progress-card">
+        <div>
+          <strong>${percent}%</strong>
+          <span>${selected.reward}</span>
+        </div>
+        <div class="adventure-meter"><span style="--value:${percent}%"></span></div>
+        <div class="adventure-milestones">
+          ${progress.milestones
+            .map(
+              (item, index) => `
+                <span class="${item.done ? "done" : ""}">
+                  <b>${item.done ? "✓" : index + 1}</b>
+                  ${item.label}
+                </span>
+              `,
+            )
+            .join("")}
+        </div>
+        ${
+          nextTask
+            ? `<button class="button primary" onclick="startTask('${nextTask.id}')">推進故事</button>`
+            : `<button class="button primary" onclick="openCardPack()" ${(child.stars || 0) >= CARD_PACK_RULES.costStars && dailyPacksRemaining(child.id) > 0 ? "" : "disabled"}>打開今日發現</button>`
+        }
+      </div>
+    </section>
+  `;
+}
+
 function kidIslandView({ child, tasks, rate, mood }) {
   const focusedZone = state.kidZoneFocus ? zoneCatalog.find((zone) => zone.id === state.kidZoneFocus) : null;
   const filteredTasks = focusedZone ? tasks.filter((task) => zoneForTask(task).id === focusedZone.id) : tasks;
@@ -2301,6 +2448,8 @@ function kidIslandView({ child, tasks, rate, mood }) {
   const focusTask = orderedTasks.find((task) => !isDoneToday(task.id));
   const focusZone = focusTask ? zoneForTask(focusTask) : null;
   return `
+    ${adventurePanel(child, tasks)}
+
     <section class="island-hero">
       <div class="section-title island-title">
         <div>
