@@ -1302,6 +1302,136 @@ function cardRevealActionCopy(card, duplicate) {
   return "新收藏會讓小島多一個故事。";
 }
 
+const characterReactions = {
+  idle: {
+    face: "•ᴗ•",
+    mood: "在旁邊",
+    motion: "breathe",
+    lines: ["我在這裡，等你準備好。", "慢慢來，小島會等你。", "先看一眼就可以。"],
+  },
+  start: {
+    face: "•ᴗ•",
+    mood: "準備出發",
+    motion: "bob",
+    lines: ["我看到第一步了。", "先做最小那一下。", "出發，不用完美。"],
+  },
+  hesitate: {
+    face: "•_•",
+    mood: "一起想想",
+    motion: "blink",
+    lines: ["不用一下子做完。", "我陪你找第一步。", "選一張最像現在的卡。"],
+  },
+  complete: {
+    face: "^ᴗ^",
+    mood: "亮起來",
+    motion: "jump",
+    lines: ["你剛剛真的開始了。", "小島多了一點光。", "我替你記住這一步。"],
+  },
+  pause: {
+    face: "•︵•",
+    mood: "抱抱休息",
+    motion: "hug",
+    lines: ["冇問題，先休息。", "我會在這裡等你。", "回來時做一小步就好。"],
+  },
+  pack: {
+    face: "✦ᴗ✦",
+    mood: "發現時間",
+    motion: "glow",
+    lines: ["卡包有新聲音。", "慢慢揭開，不急。", "看看誰來小島玩。"],
+  },
+};
+
+const petReactionLines = {
+  pet_lumo: {
+    face: "✦ᴗ✦",
+    lines: ["我會繼續幫你照亮下一步。", "每次開始，我都會亮一點。"],
+  },
+  pet_sprout: {
+    face: "🌱",
+    lines: ["我長出新葉了。", "小小一步，也會發芽。"],
+  },
+  pet_skipper: {
+    face: "⛵",
+    lines: ["我們一件件排好再出發。", "風來了，先開第一小步。"],
+  },
+  pet_pebble: {
+    face: "•",
+    lines: ["慢慢也可以很穩。", "我最懂一步一步來。"],
+  },
+  pet_mochi: {
+    face: "=^ᴗ^=",
+    lines: ["伸一伸，再慢慢開始。", "身體舒服一點，心也會輕一點。"],
+  },
+  pet_bubble_turtle: {
+    face: "🐢",
+    lines: ["吸一口氣，泡泡會陪你。", "慢慢游，也會到岸。"],
+  },
+  pet_worry_beast: {
+    face: "•́︿•̀",
+    lines: ["擔心可以變小一點。", "先試三分鐘，我陪你。"],
+  },
+};
+
+function stableIndex(seed, length) {
+  if (!length) return 0;
+  const text = String(seed || "questkids");
+  let total = 0;
+  for (let index = 0; index < text.length; index += 1) total += text.charCodeAt(index) * (index + 1);
+  return total % length;
+}
+
+function lumoReaction(context = "idle", detail = {}) {
+  const child = selectedChild();
+  const config = characterReactions[context] || characterReactions.idle;
+  const seed = [context, todayKey(), child?.id || "", detail.taskTitle || "", detail.cardId || ""].join("|");
+  const line = detail.line || config.lines[stableIndex(seed, config.lines.length)];
+  return { context, ...config, line };
+}
+
+function lumoFaceMarkup(reaction, size = "medium") {
+  return `
+    <span class="lumo-face-bubble ${size} motion-${reaction.motion}" aria-hidden="true">
+      <span class="lumo-face-glow"></span>
+      <span class="lumo-face-text">${esc(reaction.face)}</span>
+    </span>
+  `;
+}
+
+function petReactionForCard(card, context = "pack") {
+  if (!card || card.type !== "pet") return null;
+  const config = petReactionLines[card.id] || {
+    face: icon(card.icon),
+    lines: ["我也來陪你做下一步。", "我們一起探索小任務島。"],
+  };
+  const seed = [context, todayKey(), card.id].join("|");
+  return {
+    face: config.face,
+    name: card.name,
+    line: config.lines[stableIndex(seed, config.lines.length)],
+  };
+}
+
+function characterReactionCard(context = "idle", options = {}) {
+  const reaction = lumoReaction(context, options);
+  const pet = options.petCard ? petReactionForCard(options.petCard, context) : null;
+  const classes = ["character-reaction-card", `reaction-${reaction.context}`, options.compact ? "compact" : "", pet ? "with-pet" : ""]
+    .filter(Boolean)
+    .join(" ");
+  return `
+    <aside class="${classes}" aria-label="Lumo 的小旁白">
+      <div class="reaction-character">
+        ${lumoFaceMarkup(reaction)}
+        <span class="reaction-motion">${esc(reaction.mood)}</span>
+      </div>
+      <div class="reaction-copy">
+        <strong>${options.title ? esc(options.title) : "Lumo"}</strong>
+        <p>${esc(reaction.line)}</p>
+        ${pet ? `<div class="pet-reaction"><span>${esc(pet.face)}</span><small>${esc(pet.name)}：${esc(pet.line)}</small></div>` : ""}
+      </div>
+    </aside>
+  `;
+}
+
 function icon(name) {
   const icons = {
     bag: "🎒",
@@ -1471,6 +1601,7 @@ function cardRevealModal() {
             <strong>${reveal.duplicate ? "卡片升級" : "下一步"}</strong>
             <span>${cardRevealActionCopy(card, reveal.duplicate)}</span>
           </div>
+          ${characterReactionCard("pack", { cardId: card.id, petCard: card, title: card.type === "pet" ? "新夥伴的小聲音" : "Lumo 的新發現", compact: true })}
           <p class="fact-box">小知識：${card.fact}</p>
           <p class="card-nudge">${cardTypeNudge(card)}</p>
           ${card.type === "skill" && !reveal.duplicate ? `<p class="notice">已加入「能力任務」。完成練習後，這張能力卡就會真正解鎖。</p>` : ""}
@@ -1505,6 +1636,7 @@ function cardPackOpeningModal() {
             <p class="muted daily-pack-line">今日已開 ${DAILY_REWARDS.packLimit - packsRemaining}/${DAILY_REWARDS.packLimit} 包</p>
           </div>
         </div>
+        ${characterReactionCard("pack", { title: "Lumo 聽到卡包聲", compact: true })}
         <div class="pack-pool">
           <strong>透明卡池</strong>
           <div>
@@ -3111,6 +3243,7 @@ function detectView() {
           <p class="muted">選一個最接近的狀態，我們會用不同方法拆細任務。</p>
         </div>
       </div>
+      ${characterReactionCard("hesitate", { taskTitle: task.title, title: "Lumo 先陪你停一停", compact: true })}
       <div class="type-grid">
         ${delayTypes
           .map(
@@ -3182,6 +3315,7 @@ function questView() {
             <i>›</i>
             <span><b>3</b>完成任務</span>
           </div>
+          ${characterReactionCard("start", { taskTitle: task.title, title: "Lumo 的第一步提示", compact: true })}
           ${timerPanel(task, child, completedSteps.length)}
           <div class="quest-steps-heading">
             <div>
@@ -3546,6 +3680,7 @@ function taskCelebrationModal() {
         <span class="tag">${icon("star")} 任務完成</span>
         <h2 id="celebration-title">${esc(celebration.taskTitle)} 做到了</h2>
         <p class="muted">每一次願意開始，都是在替自己的小島加一點光。</p>
+        ${characterReactionCard("complete", { taskTitle: celebration.taskTitle, title: "Lumo 看見了", compact: true })}
         ${
           celebration.xpCapped
             ? `<p class="muted celebration-xp-note">今天的 XP 已收集完成，小島也會記得你的努力。</p>`
@@ -3603,10 +3738,11 @@ function pauseEncouragementModal() {
   return `
     <div class="modal-backdrop pause-backdrop" role="dialog" aria-modal="true" aria-labelledby="pause-title">
       <div class="modal pause-modal">
-        <div class="pause-companion">${icon("lumo")}</div>
+        <div class="pause-companion">${lumoFaceMarkup(lumoReaction("pause", { taskTitle: pause.taskTitle }), "large")}</div>
         <span class="tag">${esc(pause.taskTitle || "小任務")}</span>
         <h2 id="pause-title">冇問題，休息一下！</h2>
         <p class="muted">下次再試，Lumo 會等你</p>
+        ${characterReactionCard("pause", { taskTitle: pause.taskTitle, title: "Lumo 收細聲音", compact: true })}
         <div class="pause-ring" style="--timer:${pause.progress || 20}%">
           <strong>${pause.progress || 20}%</strong>
         </div>
@@ -4244,14 +4380,25 @@ function latestMoodFor(childId = selectedChild()?.id) {
   return moods.find((item) => item.id === latest?.moodId) || null;
 }
 
+function narratorReactionContext(route = state.route) {
+  if (state.taskCelebration) return "complete";
+  if (state.pauseEncouragement) return "pause";
+  if (state.cardReveal) return "pack";
+  if (route === "detect") return "hesitate";
+  if (route === "quest") return "start";
+  return "idle";
+}
+
 function narratorGuideLine(child, route = state.route) {
   const tasks = todayChildTasks(child?.id);
   const done = tasks.filter((task) => isDoneToday(task.id)).length;
   const focusMission = skillMissionsFor(child?.id).find((mission) => mission.status !== "unlocked");
   const activeTask = state.tasks.find((task) => task.id === state.activeTaskId);
-  if (state.taskCelebration) return `你剛剛完成了「${esc(state.taskCelebration.taskTitle)}」，小島又亮了一點。`;
-  if (route === "quest" && activeTask) return `現在只要陪 ${esc(child.name)} 做好「${esc(activeTask.title)}」的下一小步就可以。`;
-  if (route === "detect" && activeTask) return `先找出卡住的原因，再開始，通常會比直接催促更順。`;
+  if (state.taskCelebration) return lumoReaction("complete", { taskTitle: state.taskCelebration.taskTitle }).line;
+  if (state.cardReveal) return lumoReaction("pack").line;
+  if (state.pauseEncouragement) return lumoReaction("pause", { taskTitle: state.pauseEncouragement.taskTitle }).line;
+  if (route === "quest" && activeTask) return lumoReaction("start", { taskTitle: activeTask.title }).line;
+  if (route === "detect" && activeTask) return lumoReaction("hesitate", { taskTitle: activeTask.title }).line;
   if (focusMission) return `${esc(focusMission.title)} 已經解鎖成能力任務，做完就會真正變成你的新技能。`;
   if (!tasks.length) return `今天島上還未放任務，家長可以先放一個 3 到 5 分鐘的小任務。`;
   if (done === tasks.length) return `今天的島嶼任務已經完成，可以去開卡包，或者慢慢休息一下。`;
@@ -4287,6 +4434,7 @@ function floatingNarratorWidget(route = state.route) {
   if (!["kid", "detect", "quest", "parent"].includes(route)) return "";
   const child = selectedChild();
   if (!child) return "";
+  const reaction = lumoReaction(narratorReactionContext(route));
   const tabs = [
     ["guide", "旁白", narratorGuideLine(child, route)],
     ["parent", "家長", narratorParentLine(child)],
@@ -4300,7 +4448,7 @@ function floatingNarratorWidget(route = state.route) {
   if (state.narratorCollapsed) {
     return `
       <button class="narrator-fab route-${route}" data-narrator-fab ${fabStyle} onclick="setNarratorCollapsed(false)" aria-label="打開任務小旁白">
-        <span class="narrator-fab-core">${icon("lumo")}</span>
+        <span class="narrator-fab-core">${lumoFaceMarkup(reaction, "fab")}</span>
         <span class="narrator-fab-pulse" aria-hidden="true"></span>
       </button>
     `;
@@ -4309,7 +4457,7 @@ function floatingNarratorWidget(route = state.route) {
     <aside class="narrator-widget route-${route}" data-narrator-auto="${state.narratorAutoCollapseAt || 0}">
       <div class="narrator-head">
         <div class="narrator-cast">
-          <div class="narrator-avatar guide">${icon("lumo")}</div>
+          <div class="narrator-avatar guide">${lumoFaceMarkup(reaction, "tiny")}</div>
           <div class="narrator-avatar parent">${icon("heart")}</div>
           <div class="narrator-avatar child child-avatar-shell">${childAvatarMarkup("narrator")}</div>
         </div>
