@@ -1174,6 +1174,142 @@ button:disabled,
     linear-gradient(135deg, rgba(255, 251, 238, 0.95), rgba(234, 243, 237, 0.9));
 }
 
+.footprint-trail-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  border-radius: 8px;
+  padding: 15px;
+  color: #173328;
+  background:
+    radial-gradient(circle at 12% 6%, rgba(255, 255, 255, 0.96), transparent 7rem),
+    radial-gradient(circle at 88% 10%, rgba(255, 222, 135, 0.54), transparent 6rem),
+    linear-gradient(145deg, rgba(255, 251, 238, 0.96), rgba(224, 245, 220, 0.92) 56%, rgba(217, 239, 255, 0.72));
+  box-shadow: 0 14px 32px rgba(35, 48, 40, 0.1);
+}
+
+.footprint-trail-card::after {
+  position: absolute;
+  right: 14px;
+  top: 18px;
+  width: 86px;
+  height: 54px;
+  content: "";
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 20% 58%, rgba(120, 191, 125, 0.3) 0 5px, transparent 6px),
+    radial-gradient(circle at 46% 42%, rgba(120, 191, 125, 0.36) 0 5px, transparent 6px),
+    radial-gradient(circle at 72% 62%, rgba(120, 191, 125, 0.3) 0 5px, transparent 6px);
+  pointer-events: none;
+}
+
+.footprint-copy {
+  display: grid;
+  gap: 5px;
+  max-width: 520px;
+}
+
+.footprint-copy h2 {
+  margin: 0;
+  color: #4d2b13;
+  font-size: 24px;
+  line-height: 1.14;
+}
+
+.footprint-copy p {
+  max-width: 620px;
+  margin: 0;
+  color: #53675e;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.footprint-path {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 5px;
+}
+
+.footprint-path::before {
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  top: 25px;
+  height: 4px;
+  content: "";
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(120, 191, 125, 0.45), rgba(242, 189, 58, 0.35));
+}
+
+.footprint-step {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  color: #8a9891;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.footprint-step span {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 2px solid rgba(255, 255, 255, 0.86);
+  border-radius: 16px 16px 18px 18px;
+  color: #6f7d75;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 6px 14px rgba(35, 48, 40, 0.08);
+}
+
+.footprint-step.done {
+  color: #17633f;
+}
+
+.footprint-step.done span {
+  color: #fff;
+  background: linear-gradient(145deg, #78bf7d, #3d925e);
+  box-shadow: 0 8px 18px rgba(47, 143, 91, 0.2);
+}
+
+.footprint-step.today span {
+  border-color: rgba(242, 189, 58, 0.86);
+  box-shadow:
+    0 0 0 5px rgba(242, 189, 58, 0.18),
+    0 8px 18px rgba(103, 73, 9, 0.12);
+}
+
+.footprint-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.footprint-footer > span {
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: #53675e;
+  background: rgba(255, 255, 255, 0.68);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.footprint-footer > span strong {
+  color: #4d2b13;
+}
+
+.footprint-footer .button {
+  margin-left: auto;
+}
+
 .island-light-orb {
   display: grid;
   width: 54px;
@@ -8024,6 +8160,8 @@ p {
   .route-kid .kid-homebar,
   .route-kid .daily-nudge,
   .route-kid .daily-adventure-panel,
+  .route-kid .footprint-trail-card,
+  .route-kid .island-light-card,
   .route-kid .island-hero,
   .route-kid .task-dashboard,
   .route-kid .collection-hero,
@@ -8204,6 +8342,48 @@ p {
 
   .island-light-copy strong {
     font-size: 19px;
+  }
+
+  .footprint-trail-card {
+    gap: 11px;
+    padding: 13px;
+  }
+
+  .footprint-trail-card::after {
+    opacity: 0.65;
+  }
+
+  .footprint-copy h2 {
+    font-size: 21px;
+  }
+
+  .footprint-copy p {
+    font-size: 13px;
+  }
+
+  .footprint-path {
+    gap: 4px;
+  }
+
+  .footprint-path::before {
+    left: 9%;
+    right: 9%;
+    top: 22px;
+  }
+
+  .footprint-step span {
+    width: 34px;
+    height: 34px;
+    border-radius: 14px 14px 16px 16px;
+  }
+
+  .footprint-step strong {
+    font-size: 9px;
+  }
+
+  .footprint-footer .button {
+    width: 100%;
+    margin-left: 0;
   }
 
   .companion-stage {

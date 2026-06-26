@@ -1484,6 +1484,62 @@ function islandMoodLight({ rate, mood, requiredDone, requiredTotal, focusTask })
   `;
 }
 
+function recentFootprintDays(childId) {
+  const completedDates = new Set(completionsFor(childId).map((entry) => entry.date));
+  return Array.from({ length: 7 }, (_, index) => {
+    const offset = index - 6;
+    const date = dateKeyOffset(offset);
+    return {
+      date,
+      done: completedDates.has(date),
+      today: offset === 0,
+      label: offset === 0 ? "今天" : new Intl.DateTimeFormat("zh-Hant-HK", { weekday: "short" }).format(new Date(`${date}T12:00:00`)),
+    };
+  });
+}
+
+function islandFootprintTrail({ child, streak, focusTask }) {
+  const days = recentFootprintDays(child.id);
+  const doneCount = days.filter((day) => day.done).length;
+  const todayDone = days[days.length - 1]?.done;
+  const title = todayDone ? "今天已經留下足跡" : "今天放下一個小足跡";
+  const line = todayDone
+    ? "小島記得你有回來，明天再慢慢走下一格。"
+    : focusTask
+      ? `先做「${firstStepForTask(focusTask)}」，就能點亮今天。`
+      : "完成一個小任務，就會點亮今天的小路。";
+  return `
+    <section class="footprint-trail-card">
+      <div class="footprint-copy">
+        <span class="tag">${icon("lighthouse")} 7 日小足跡</span>
+        <h2>${title}</h2>
+        <p>${esc(line)}</p>
+      </div>
+      <div class="footprint-path" aria-label="最近 7 天足跡">
+        ${days
+          .map(
+            (day, index) => `
+              <div class="footprint-step ${day.done ? "done" : ""} ${day.today ? "today" : ""}">
+                <span>${day.done ? "✓" : index + 1}</span>
+                <strong>${day.label}</strong>
+              </div>
+            `,
+          )
+          .join("")}
+      </div>
+      <div class="footprint-footer">
+        <span><strong>${doneCount}/7</strong> 天有回來</span>
+        <span><strong>${streak}</strong> 天連續</span>
+        ${
+          focusTask
+            ? `<button class="button primary" onclick="startTask('${focusTask.id}')">留下今日足跡</button>`
+            : `<button class="button ghost" onclick="setKidTab('achievements')">看看足跡</button>`
+        }
+      </div>
+    </section>
+  `;
+}
+
 function tapIslandLight(taskId = "") {
   const task = state.tasks.find((item) => item.id === taskId);
   setDailyRewardToast({
@@ -2454,7 +2510,7 @@ function kidView() {
       ${(state.kidTab || "island") === "island" ? kidParentMessage(child) : ""}
       ${state.kidTab === "achievements" ? kidAchievementsView({ child, badges, skillMissions, streak }) : ""}
       ${state.kidTab === "collection" ? kidCollectionView({ child, ownedCards }) : ""}
-      ${(state.kidTab || "island") === "island" ? kidIslandView({ child, tasks, rate, mood }) : ""}
+      ${(state.kidTab || "island") === "island" ? kidIslandView({ child, tasks, rate, mood, streak }) : ""}
     </section>
   `;
 }
@@ -2696,7 +2752,7 @@ function adventurePanel(child, tasks) {
   `;
 }
 
-function kidIslandView({ child, tasks, rate, mood }) {
+function kidIslandView({ child, tasks, rate, mood, streak }) {
   const focusedZone = state.kidZoneFocus ? zoneCatalog.find((zone) => zone.id === state.kidZoneFocus) : null;
   const filteredTasks = focusedZone ? tasks.filter((task) => zoneForTask(task).id === focusedZone.id) : tasks;
   const orderedTasks = state.kidPlanningMode
@@ -2717,6 +2773,7 @@ function kidIslandView({ child, tasks, rate, mood }) {
 	  return `
 	    ${adventurePanel(child, tasks)}
 	    ${islandMoodLight({ rate, mood, requiredDone, requiredTotal: requiredTasks.length, focusTask })}
+	    ${islandFootprintTrail({ child, streak, focusTask })}
 
 	    <section class="island-hero">
       <div class="section-title island-title">
@@ -2913,13 +2970,7 @@ function kidAchievementsView({ child, badges, skillMissions, streak }) {
   const nextBadge = badgeCatalog.find((badge) => !badges.some((earned) => earned.id === badge.id));
   const nextProgress = nextBadge ? badgeProgress(nextBadge, child.id) : null;
   const nextPercent = nextBadge ? badgeProgressPercent(nextBadge, child.id) : 100;
-  const weekDays = Array.from({ length: 7 }, (_, index) => {
-    const offset = index - 6;
-    const date = dateKeyOffset(offset);
-    const done = completionsFor(child.id).some((entry) => entry.date === date);
-    const label = offset === 0 ? "今天" : new Intl.DateTimeFormat("zh-Hant-HK", { weekday: "short" }).format(new Date(`${date}T12:00:00`));
-    return { date, done, label };
-  });
+  const weekDays = recentFootprintDays(child.id);
   return `
     <section class="achievement-hero">
       <div class="achievement-hero-copy">
@@ -2980,7 +3031,7 @@ function kidAchievementsView({ child, badges, skillMissions, streak }) {
         ${weekDays
           .map(
             (day, index) => `
-              <div class="${day.done ? "done" : ""} ${index === 6 ? "today" : ""}">
+              <div class="${day.done ? "done" : ""} ${day.today ? "today" : ""}">
                 <span>${day.done ? "✓" : index + 1}</span>
                 <strong>${day.label}</strong>
               </div>
