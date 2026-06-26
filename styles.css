@@ -1655,7 +1655,27 @@ button:disabled,
     radial-gradient(circle at 50% 20%, rgba(255, 255, 255, 0.95), transparent 4.8rem),
     linear-gradient(180deg, rgba(255, 246, 215, 0.92), rgba(217, 239, 255, 0.78));
   box-shadow: 0 12px 26px rgba(35, 48, 40, 0.1);
+  color: inherit;
+  font: inherit;
   text-align: center;
+  cursor: pointer;
+  appearance: none;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+}
+
+.companion-pet-card:hover,
+.companion-pet-card:focus-visible {
+  border-color: rgba(242, 189, 58, 0.68);
+  box-shadow: 0 16px 34px rgba(35, 48, 40, 0.14);
+  transform: translateY(-2px);
+}
+
+.companion-pet-card:focus-visible {
+  outline: 3px solid rgba(242, 189, 58, 0.34);
+  outline-offset: 3px;
 }
 
 .companion-pet-face {

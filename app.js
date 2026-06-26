@@ -1372,6 +1372,16 @@ const petReactionLines = {
   },
 };
 
+const petTapReactionLines = {
+  pet_lumo: ["我聽到你叫我。", "我會飛慢一點等你。", "一起找最小那一步。"],
+  pet_sprout: ["葉子動了一下。", "我準備好發芽了。", "小步也有陽光。"],
+  pet_skipper: ["船帆已經打開。", "我們慢慢靠岸。", "出發前先數一件事。"],
+  pet_pebble: ["我會穩穩陪你。", "不用快，穩就很好。", "一小步也可以很踏實。"],
+  pet_mochi: ["先伸一伸手。", "我在旁邊輕輕喵。", "休息一下也可以再來。"],
+  pet_bubble_turtle: ["泡泡浮上來了。", "先吸一口氣。", "慢慢游也會到。"],
+  pet_worry_beast: ["我把擔心收細一點。", "怕也可以先看一眼。", "我們先試三分鐘。"],
+};
+
 function stableIndex(seed, length) {
   if (!length) return 0;
   const text = String(seed || "questkids");
@@ -1409,6 +1419,24 @@ function petReactionForCard(card, context = "pack") {
     name: card.name,
     line: config.lines[stableIndex(seed, config.lines.length)],
   };
+}
+
+function petTapReaction(card) {
+  if (!card) return null;
+  const lines = petTapReactionLines[card.id] || ["我也在小島等你。", "我們一起做一點點。", "下一步不用很大。"];
+  const line = lines[Math.floor(Math.random() * lines.length)];
+  return {
+    face: petReactionLines[card.id]?.face || icon(card.icon),
+    name: card.name,
+    line,
+  };
+}
+
+function tapCompanionPet(cardId) {
+  const card = cardCatalog.find((item) => item.id === cardId);
+  const reaction = petTapReaction(card);
+  if (!reaction) return;
+  setDailyRewardToast(`${reaction.face} ${reaction.name}：${reaction.line}`);
 }
 
 function ownedPetCompanions(childId = selectedChild()?.id, limit = 3) {
@@ -1472,11 +1500,11 @@ function kidCompanionStage({ child, focusTask, mood, requiredDone, requiredTotal
           .map((card) => {
             const pet = petReactionForCard(card, context);
             return `
-              <article class="companion-pet-card card-${card.id}">
+              <button class="companion-pet-card card-${card.id}" type="button" onclick="tapCompanionPet('${card.id}')" aria-label="聽聽 ${esc(card.name)} 的說話">
                 <span class="companion-pet-face">${esc(pet?.face || icon(card.icon))}</span>
                 <strong>${esc(card.name)}</strong>
                 <small>${esc(pet?.line || card.story)}</small>
-              </article>
+              </button>
             `;
           })
           .join("")}
