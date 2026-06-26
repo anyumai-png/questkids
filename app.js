@@ -1432,11 +1432,32 @@ function petTapReaction(card) {
   };
 }
 
+function companionMiniAction(card, task = null) {
+  const firstStep = task ? firstStepForTask(task) : "";
+  const taskAction = firstStep ? `小邀請：先做「${firstStep}」一下。` : "";
+  const fallback = {
+    pet_lumo: "小邀請：指一指你想先做的任務。",
+    pet_sprout: "小邀請：碰一下要用的東西。",
+    pet_skipper: "小邀請：數出第一樣要準備的物件。",
+    pet_pebble: "小邀請：把一件東西放回原位。",
+    pet_mochi: "小邀請：伸一伸手，再慢慢開始。",
+    pet_bubble_turtle: "小邀請：吸一口氣，再呼出來。",
+    pet_worry_beast: "小邀請：只看任務 3 秒就好。",
+  };
+  return taskAction || fallback[card?.id] || "小邀請：做一個很小的開始動作。";
+}
+
 function tapCompanionPet(cardId) {
   const card = cardCatalog.find((item) => item.id === cardId);
   const reaction = petTapReaction(card);
   if (!reaction) return;
-  setDailyRewardToast(`${reaction.face} ${reaction.name}：${reaction.line}`);
+  const child = selectedChild();
+  const nextTask = orderedChildTasks(child?.id).find((task) => !isDoneToday(task.id));
+  setDailyRewardToast({
+    icon: reaction.face,
+    message: `${reaction.name}：${reaction.line}`,
+    detail: companionMiniAction(card, nextTask),
+  });
 }
 
 function ownedPetCompanions(childId = selectedChild()?.id, limit = 3) {
@@ -2821,11 +2842,12 @@ function kidIslandView({ child, tasks, rate, mood }) {
   `;
 }
 
-function setDailyRewardToast(message) {
-  dailyRewardToast = { message };
+function setDailyRewardToast(toast) {
+  const nextToast = typeof toast === "string" ? { icon: icon("spark"), message: toast, detail: "" } : { icon: icon("spark"), detail: "", ...toast };
+  dailyRewardToast = nextToast;
   render();
   setTimeout(() => {
-    if (dailyRewardToast?.message !== message) return;
+    if (dailyRewardToast?.message !== nextToast.message) return;
     dailyRewardToast = null;
     render();
   }, 3200);
@@ -2840,8 +2862,11 @@ function dailyRewardToastMarkup() {
   if (!dailyRewardToast) return "";
   return `
     <div class="daily-reward-toast" role="status" aria-live="polite">
-      <span>${icon("spark")}</span>
-      <strong>${esc(dailyRewardToast.message)}</strong>
+      <span>${esc(dailyRewardToast.icon || icon("spark"))}</span>
+      <strong>
+        ${esc(dailyRewardToast.message)}
+        ${dailyRewardToast.detail ? `<small>${esc(dailyRewardToast.detail)}</small>` : ""}
+      </strong>
       <button type="button" onclick="dismissDailyRewardToast()" aria-label="關閉提示">×</button>
     </div>
   `;
