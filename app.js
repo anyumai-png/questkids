@@ -1460,6 +1460,39 @@ function tapCompanionPet(cardId) {
   });
 }
 
+function islandMoodLight({ rate, mood, requiredDone, requiredTotal, focusTask }) {
+  const level = rate >= 100 ? "shine" : rate >= 50 ? "warm" : rate > 0 ? "glow" : "sleepy";
+  const label = {
+    shine: "小島閃閃發光",
+    warm: "小島開始暖起來",
+    glow: "小島亮了一點",
+    sleepy: "小島正在等第一步",
+  }[level];
+  const moodLabel = mood ? mood.label : "未選心情";
+  const nextLine = focusTask ? `下一步：${firstStepForTask(focusTask)}` : "今天可以慢慢收好成果";
+  return `
+    <button class="island-light-card ${level}" type="button" onclick="tapIslandLight('${focusTask?.id || ""}')" aria-label="聽聽小島今日狀態">
+      <span class="island-light-orb" aria-hidden="true">${level === "shine" ? "✦" : icon("spark")}</span>
+      <span class="island-light-copy">
+        <small>今日小島光</small>
+        <strong>${label}</strong>
+        <em>${moodLabel} · 必須任務 ${requiredDone}/${requiredTotal || 0}</em>
+        <b>${esc(nextLine)}</b>
+      </span>
+      <span class="island-light-meter" aria-hidden="true"><i style="--value:${rate}%"></i></span>
+    </button>
+  `;
+}
+
+function tapIslandLight(taskId = "") {
+  const task = state.tasks.find((item) => item.id === taskId);
+  setDailyRewardToast({
+    icon: icon("spark"),
+    message: task ? "小島亮了一下。" : "小島把今天的努力收好了。",
+    detail: task ? `小邀請：先做「${firstStepForTask(task)}」一下。` : "小邀請：去圖鑑看看今天的發現。",
+  });
+}
+
 function ownedPetCompanions(childId = selectedChild()?.id, limit = 3) {
   const pets = collectionCards(childId)
     .filter((card) => card.owned && card.type === "pet")
@@ -2680,11 +2713,12 @@ function kidIslandView({ child, tasks, rate, mood }) {
   const dailyPacksLeft = dailyPacksRemaining(child.id);
   const focusMission = skillMissionsFor(child.id).find((mission) => mission.status !== "unlocked");
   const focusTask = orderedTasks.find((task) => !isDoneToday(task.id));
-  const focusZone = focusTask ? zoneForTask(focusTask) : null;
-  return `
-    ${adventurePanel(child, tasks)}
+	  const focusZone = focusTask ? zoneForTask(focusTask) : null;
+	  return `
+	    ${adventurePanel(child, tasks)}
+	    ${islandMoodLight({ rate, mood, requiredDone, requiredTotal: requiredTasks.length, focusTask })}
 
-    <section class="island-hero">
+	    <section class="island-hero">
       <div class="section-title island-title">
         <div>
           <span class="tag">今天 ${todayKey()}</span>
