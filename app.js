@@ -613,6 +613,7 @@ const demoState = () => {
     narratorFabY: null,
     narratorAutoCollapseAt: 0,
     mapZoom: 1,
+    mapMode: "auto",
     timer: { running: false, secondsLeft: 0, totalSeconds: 0, intervalId: null },
     dailyRewards: {},
     packLedger: {},
@@ -709,11 +710,12 @@ const demoState = () => {
   };
 };
 
-const STORE_VERSION = 10;
+const STORE_VERSION = 11;
 let state = loadState();
 let liveClockIntervalId = null;
 let narratorAutoTimerId = null;
 let collectionDetailCardId = null;
+let threeIslandFrameId = null;
 let collectionTypeFilter = "all";
 let collectionOwnershipFilter = "all";
 let dailyRewardToast = null;
@@ -741,6 +743,7 @@ function migrateState(saved) {
   if (!merged.onboardingStep) merged.onboardingStep = "profile";
   if (typeof merged.narratorCollapsed !== "boolean") merged.narratorCollapsed = true;
   if (typeof merged.mapZoom !== "number") merged.mapZoom = 1;
+  if (!["auto", "2d", "3d"].includes(merged.mapMode)) merged.mapMode = "auto";
   if (typeof merged.kidPlanningMode !== "boolean") merged.kidPlanningMode = false;
   if (!merged.dailyTaskOrders || typeof merged.dailyTaskOrders !== "object" || Array.isArray(merged.dailyTaskOrders)) merged.dailyTaskOrders = {};
   if (typeof merged.narratorAutoCollapseAt !== "number") merged.narratorAutoCollapseAt = 0;
@@ -1791,6 +1794,7 @@ function render() {
   initMagicPreview();
   initKidTaskPlanner();
   initTaskWeekdayToggles();
+  initThreeIsland();
 }
 
 function cardRevealModal() {
@@ -2029,6 +2033,28 @@ function setMapZoom(nextZoom) {
   state.mapZoom = Math.max(0.5, Math.min(1.2, roundedZoom));
   saveState();
   render();
+}
+
+const VALID_MAP_MODES = ["auto", "2d", "3d"];
+
+function setMapMode(mode) {
+  if (!VALID_MAP_MODES.includes(mode)) return;
+  state.mapMode = mode;
+  saveState();
+  render();
+}
+
+function toggleMapMode() {
+  const order = ["auto", "3d", "2d"];
+  const currentIndex = order.indexOf(state.mapMode);
+  const next = order[(currentIndex + 1) % order.length] || "auto";
+  setMapMode(next);
+}
+
+function mapModeLabel(mode = state.mapMode) {
+  if (mode === "3d") return "3D";
+  if (mode === "2d") return "2D";
+  return "自動";
 }
 
 function mapZoomLabel(zoom) {
@@ -2473,22 +2499,45 @@ function islandMap(options = {}) {
   const child = selectedChild();
   const zones = child ? zoneStats(child.id) : zoneCatalog.map((zone) => ({ ...zone, total: 0, done: 0, progress: 0 }));
   const overall = child ? todayRequiredRate(child.id) : 0;
+  const mapMode = options.compact ? "2d" : state.mapMode || "auto";
+  const showThreeShell = mapMode === "3d";
   const zoom = Math.max(0.5, Math.min(1.2, Math.round(Number(state.mapZoom || 1) * 10) / 10));
   const canvasWidth = Math.round(760 * zoom);
   const canvasHeight = Math.round(1180 * zoom);
   const focusedZone = state.kidZoneFocus ? zones.find((zone) => zone.id === state.kidZoneFocus) : null;
   const zoneTask = focusedZone ? nextTaskForZone(focusedZone.id, child?.id) : null;
   return `
-    <div class="map-card illustrated ${options.compact ? "compact" : ""}">
+    <div class="map-card illustrated ${options.compact ? "compact" : ""} ${showThreeShell ? "is-3d" : "is-2d"}" data-map-mode="${esc(mapMode)}">
       <div class="map-toolbar" aria-label="地圖操作">
         <span>${icon("spark")} 上下左右拖動</span>
-        <div class="map-zoom">
-          <button type="button" onclick="setMapZoom(${(zoom - 0.1).toFixed(1)})" aria-label="縮小地圖" ${zoom <= 0.5 ? "disabled" : ""}>−</button>
-          <button type="button" onclick="setMapZoom(1)" aria-label="重設地圖，目前倍率 ${mapZoomLabel(zoom)}">${mapZoomLabel(zoom)}</button>
-          <button type="button" onclick="setMapZoom(${(zoom + 0.1).toFixed(1)})" aria-label="放大地圖" ${zoom >= 1.2 ? "disabled" : ""}>+</button>
-          <button type="button" onclick="setMapZoom(0.5)" aria-label="顯示地圖全景">⛶</button>
+        <div class="map-tools">
+          ${
+            options.compact
+              ? ""
+              : `<button class="map-mode-button" type="button" onclick="toggleMapMode()" aria-label="切換地圖模式，目前 ${mapModeLabel(mapMode)}">${mapModeLabel(mapMode)}</button>`
+          }
+          <div class="map-zoom">
+            <button type="button" onclick="setMapZoom(${(zoom - 0.1).toFixed(1)})" aria-label="縮小地圖" ${zoom <= 0.5 ? "disabled" : ""}>−</button>
+            <button type="button" onclick="setMapZoom(1)" aria-label="重設地圖，目前倍率 ${mapZoomLabel(zoom)}">${mapZoomLabel(zoom)}</button>
+            <button type="button" onclick="setMapZoom(${(zoom + 0.1).toFixed(1)})" aria-label="放大地圖" ${zoom >= 1.2 ? "disabled" : ""}>+</button>
+            <button type="button" onclick="setMapZoom(0.5)" aria-label="顯示地圖全景">⛶</button>
+          </div>
         </div>
       </div>
+      ${
+        showThreeShell
+          ? `
+            <div class="map-3d-shell" data-three-island aria-label="3D 小任務島 Prototype">
+              <canvas class="map-3d-canvas" data-three-canvas></canvas>
+              <div class="map-3d-loading" data-three-status>載入 3D 小島...</div>
+              <button class="three-zone-hit three-zone-1" type="button" onclick="selectMapZone('morning')" aria-label="晨光碼頭 3D 區域"></button>
+              <button class="three-zone-hit three-zone-2" type="button" onclick="selectMapZone('study')" aria-label="學習樹林 3D 區域"></button>
+              <button class="three-zone-hit three-zone-3" type="button" onclick="selectMapZone('home')" aria-label="家務港灣 3D 區域"></button>
+              <button class="three-zone-hit three-zone-4" type="button" onclick="selectMapZone('calm')" aria-label="平靜海灣 3D 區域"></button>
+            </div>
+          `
+          : ""
+      }
       <div class="map-scroll" data-map-scroll>
         <div class="map-canvas" style="width:${canvasWidth}px; height:${canvasHeight}px;">
           <div class="map-sky"></div>
@@ -2538,6 +2587,172 @@ function islandMap(options = {}) {
       </div>
     </div>
   `;
+}
+
+function canUseWebGL() {
+  try {
+    const canvas = document.createElement("canvas");
+    return !!(window.WebGLRenderingContext && (canvas.getContext("webgl") || canvas.getContext("experimental-webgl")));
+  } catch {
+    return false;
+  }
+}
+
+function ensureThree() {
+  if (window.THREE) return Promise.resolve(window.THREE);
+  if (window.__questKidsThreePromise) return window.__questKidsThreePromise;
+  window.__questKidsThreePromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js";
+    script.async = true;
+    script.onload = () => (window.THREE ? resolve(window.THREE) : reject(new Error("THREE not available")));
+    script.onerror = () => reject(new Error("THREE failed to load"));
+    document.head.appendChild(script);
+  });
+  return window.__questKidsThreePromise;
+}
+
+function initThreeIsland() {
+  if (threeIslandFrameId) {
+    cancelAnimationFrame(threeIslandFrameId);
+    threeIslandFrameId = null;
+  }
+  const shell = document.querySelector("[data-three-island]");
+  if (!shell) return;
+  const card = shell.closest(".map-card");
+  const status = shell.querySelector("[data-three-status]");
+  if (!canUseWebGL()) {
+    card?.classList.add("three-failed");
+    if (status) status.textContent = "這部裝置暫時使用 2D 地圖";
+    return;
+  }
+  ensureThree()
+    .then((THREE) => {
+      if (!document.body.contains(shell)) return;
+      buildThreeIslandScene(THREE, shell);
+      card?.classList.add("three-ready");
+      if (status) status.textContent = "拖動旋轉小島";
+    })
+    .catch(() => {
+      card?.classList.add("three-failed");
+      if (status) status.textContent = "3D 載入不到，已保留 2D 地圖";
+    });
+}
+
+function buildThreeIslandScene(THREE, shell) {
+  const canvas = shell.querySelector("[data-three-canvas]");
+  if (!canvas) return;
+  const rect = shell.getBoundingClientRect();
+  const width = Math.max(280, Math.round(rect.width));
+  const height = Math.max(360, Math.round(rect.height));
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(width, height, false);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
+  camera.position.set(0, 7, 10);
+  camera.lookAt(0, 0, 0);
+
+  scene.add(new THREE.HemisphereLight(0xf7fbff, 0x7aa36a, 2.1));
+  const sun = new THREE.DirectionalLight(0xffe3a3, 2.4);
+  sun.position.set(4, 8, 5);
+  scene.add(sun);
+
+  const island = new THREE.Group();
+  scene.add(island);
+
+  const sea = new THREE.Mesh(
+    new THREE.CylinderGeometry(5.8, 6.3, 0.32, 48),
+    new THREE.MeshStandardMaterial({ color: 0x59c1df, roughness: 0.78, metalness: 0.02 }),
+  );
+  sea.position.y = -0.28;
+  island.add(sea);
+
+  const land = new THREE.Mesh(
+    new THREE.CylinderGeometry(3.9, 4.4, 0.7, 9),
+    new THREE.MeshStandardMaterial({ color: 0x8fd36f, roughness: 0.92 }),
+  );
+  land.position.y = 0.05;
+  island.add(land);
+
+  const path = new THREE.Mesh(
+    new THREE.TorusGeometry(1.7, 0.08, 8, 40),
+    new THREE.MeshStandardMaterial({ color: 0xf4d88a, roughness: 0.9 }),
+  );
+  path.rotation.x = Math.PI / 2;
+  path.position.y = 0.45;
+  path.scale.set(1.45, 0.78, 1);
+  island.add(path);
+
+  addToyZone(THREE, island, "dock", -2.2, 0.7, 1.9, 0xf6c85f);
+  addToyZone(THREE, island, "tree", 2.1, 0.7, 1.7, 0x65b96f);
+  addToyZone(THREE, island, "home", -2, 0.7, -1.8, 0xf49a7a);
+  addToyZone(THREE, island, "water", 2.2, 0.7, -1.7, 0x73c7ed);
+
+  const kid = new THREE.Mesh(
+    new THREE.SphereGeometry(0.22, 18, 12),
+    new THREE.MeshStandardMaterial({ color: 0xffd09a, roughness: 0.8 }),
+  );
+  kid.position.set(-0.28, 0.98, -0.18);
+  island.add(kid);
+
+  const lumo = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 18, 12),
+    new THREE.MeshStandardMaterial({ color: 0xfff4a3, emissive: 0xffd766, emissiveIntensity: 0.75 }),
+  );
+  lumo.position.set(0.35, 1.05, -0.05);
+  island.add(lumo);
+
+  let dragging = false;
+  let lastX = 0;
+  shell.onpointerdown = (event) => {
+    dragging = true;
+    lastX = event.clientX;
+    shell.setPointerCapture?.(event.pointerId);
+  };
+  shell.onpointermove = (event) => {
+    if (!dragging) return;
+    island.rotation.y += (event.clientX - lastX) * 0.01;
+    lastX = event.clientX;
+  };
+  shell.onpointerup = () => {
+    dragging = false;
+  };
+  shell.onpointercancel = () => {
+    dragging = false;
+  };
+
+  const animate = () => {
+    island.rotation.y += dragging ? 0 : 0.003;
+    lumo.position.y = 1.06 + Math.sin(Date.now() / 420) * 0.08;
+    renderer.render(scene, camera);
+    threeIslandFrameId = requestAnimationFrame(animate);
+  };
+  animate();
+}
+
+function addToyZone(THREE, group, type, x, y, z, color) {
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.5, 0.58, 0.18, 6),
+    new THREE.MeshStandardMaterial({ color, roughness: 0.82 }),
+  );
+  base.position.set(x, y, z);
+  group.add(base);
+  if (type === "tree") {
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.52, 8), new THREE.MeshStandardMaterial({ color: 0x8c5a35 }));
+    trunk.position.set(x, y + 0.35, z);
+    const leaves = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.78, 8), new THREE.MeshStandardMaterial({ color: 0x3f9d58 }));
+    leaves.position.set(x, y + 0.85, z);
+    group.add(trunk, leaves);
+    return;
+  }
+  const box = new THREE.Mesh(
+    new THREE.BoxGeometry(type === "dock" ? 0.65 : 0.48, 0.36, type === "water" ? 0.18 : 0.5),
+    new THREE.MeshStandardMaterial({ color: 0xfff3d0, roughness: 0.85 }),
+  );
+  box.position.set(x, y + 0.3, z);
+  group.add(box);
 }
 
 function shouldShowMoodModal() {
@@ -4752,9 +4967,10 @@ function floatingNarratorWidget(route = state.route) {
     state.narratorFabX != null && state.narratorFabY != null
       ? `style="left:${state.narratorFabX}px; top:${state.narratorFabY}px; right:auto; bottom:auto;"`
       : "";
-  if (state.narratorCollapsed) {
+  const forceCompactNarrator = route === "kid" && state.mapMode === "3d";
+  if (state.narratorCollapsed || forceCompactNarrator) {
     return `
-      <button class="narrator-fab route-${route}" data-narrator-fab ${fabStyle} onclick="setNarratorCollapsed(false)" aria-label="打開任務小旁白">
+      <button class="narrator-fab route-${route}" data-narrator-fab ${fabStyle} onclick="setNarratorCollapsed(${forceCompactNarrator ? "true" : "false"})" aria-label="打開任務小旁白">
         <span class="narrator-fab-core">${lumoFaceMarkup(reaction, "fab")}</span>
         <span class="narrator-fab-pulse" aria-hidden="true"></span>
       </button>
