@@ -248,6 +248,59 @@ const adventurePaths = [
   },
 ];
 
+const islandDecorationCatalog = [
+  {
+    id: "starter_flag",
+    name: "晨光小旗",
+    icon: "flag",
+    zone: "morning",
+    className: "decor-flag",
+    rule: "完成 1 個任務",
+    unlocked: ({ completed }) => completed >= 1,
+    parentNote: "由任務完成解鎖，提醒孩子自己開始過。",
+  },
+  {
+    id: "study_sprout",
+    name: "學習小樹",
+    icon: "sprout",
+    zone: "study",
+    className: "decor-sprout",
+    rule: "累積完成 3 個任務",
+    unlocked: ({ completed }) => completed >= 3,
+    parentNote: "用累積完成數驅動，不需要額外刷任務。",
+  },
+  {
+    id: "collection_hall",
+    name: "圖鑑小屋",
+    icon: "book",
+    zone: "study",
+    className: "decor-gallery",
+    rule: "發現 5 張收藏卡",
+    unlocked: ({ ownedCards }) => ownedCards.length >= 5,
+    parentNote: "讓收藏有展示位置，不加入稀有度刺激。",
+  },
+  {
+    id: "pet_house",
+    name: "夥伴小屋",
+    icon: "heart",
+    zone: "calm",
+    className: "decor-pet-house",
+    rule: "遇見 1 位情緒夥伴",
+    unlocked: ({ ownedCards }) => ownedCards.filter((card) => card.type === "pet").length >= 1,
+    parentNote: "把寵物變成陪伴感，而不是追求抽到稀有。",
+  },
+  {
+    id: "skill_bridge",
+    name: "能力小橋",
+    icon: "knot",
+    zone: "home",
+    className: "decor-bridge",
+    rule: "解鎖 1 張能力卡",
+    unlocked: ({ unlockedSkills }) => unlockedSkills >= 1,
+    parentNote: "生活技能完成後才點亮，連接練習和世界變化。",
+  },
+];
+
 const parentMessagePresets = [
   "我看到你願意開始，這已經很不容易。",
   "不用急著做完，我陪你慢慢做第一步。",
@@ -1053,6 +1106,80 @@ function latestCompletionZoneId(childId = selectedChild()?.id) {
   if (latest) return zoneForTask(taskById.get(latest.taskId)).id;
   const nextTask = orderedChildTasks(childId).find((task) => !isDoneToday(task.id)) || orderedChildTasks(childId)[0];
   return nextTask ? zoneForTask(nextTask).id : "calm";
+}
+
+function islandDecorationContext(childId = selectedChild()?.id) {
+  const ownedCards = collectionCards(childId).filter((card) => card.owned);
+  const missions = skillMissionsFor(childId);
+  return {
+    completed: totalCompleted(childId),
+    ownedCards,
+    unlockedSkills: missions.filter((mission) => mission.status === "unlocked").length,
+    activeSkills: missions.filter((mission) => mission.status !== "unlocked").length,
+  };
+}
+
+function islandDecorations(childId = selectedChild()?.id) {
+  const context = islandDecorationContext(childId);
+  return islandDecorationCatalog.map((decor) => ({
+    ...decor,
+    unlocked: decor.unlocked(context),
+    context,
+  }));
+}
+
+function islandDecorationMarkup(childId = selectedChild()?.id) {
+  return islandDecorations(childId)
+    .filter((decor) => decor.unlocked)
+    .map(
+      (decor) => `
+        <button class="island-decor ${decor.className}" type="button" onclick="openIslandDecoration('${decor.id}')" aria-label="${esc(decor.name)}，${esc(decor.rule)}">
+          <span>${icon(decor.icon)}</span>
+        </button>
+      `,
+    )
+    .join("");
+}
+
+function islandBuildPanel(childId = selectedChild()?.id) {
+  const decorations = islandDecorations(childId);
+  const unlocked = decorations.filter((decor) => decor.unlocked);
+  const next = decorations.find((decor) => !decor.unlocked);
+  return `
+    <section class="panel island-build-panel">
+      <div>
+        <span class="tag">${icon("home")} 建造我的小島</span>
+        <h2>${unlocked.length}/${decorations.length} 個裝飾已點亮</h2>
+        <p class="muted">${next ? `下一個：${next.name} · ${next.rule}` : "小島基礎裝飾已全部點亮，之後可加入每週故事區域。"}</p>
+      </div>
+      <div class="island-build-list">
+        ${decorations
+          .map(
+            (decor) => `
+              <button class="${decor.unlocked ? "unlocked" : "locked"}" type="button" onclick="openIslandDecoration('${decor.id}')">
+                <span>${decor.unlocked ? icon(decor.icon) : "?"}</span>
+                <strong>${decor.name}</strong>
+                <small>${decor.rule}</small>
+              </button>
+            `,
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
+function openIslandDecoration(decorId) {
+  const decor = islandDecorations(selectedChild()?.id).find((item) => item.id === decorId);
+  if (!decor) return;
+  state.pendingConfirm = {
+    action: "noop",
+    title: decor.unlocked ? decor.name : "還未點亮",
+    body: decor.unlocked
+      ? `${decor.name} 已放到小島上。${decor.parentNote}`
+      : `${decor.rule} 後就會出現在小島上。`,
+  };
+  render();
 }
 
 function packRuleStatus(childId = selectedChild()?.id) {
@@ -2545,6 +2672,7 @@ function islandMap(options = {}) {
           <div class="island-path"></div>
           <div class="companion" title="Lumo 光點夥伴">${icon("lumo")}</div>
           <div class="explorer" title="小任務探索員">${childAvatarMarkup("map")}</div>
+          ${islandDecorationMarkup(child?.id)}
           ${zones
             .map((zone, index) => {
               const completion = zone.total === 0
@@ -2689,6 +2817,9 @@ function buildThreeIslandScene(THREE, shell) {
   addToyZone(THREE, island, "tree", 2.1, 0.7, 1.7, 0x65b96f);
   addToyZone(THREE, island, "home", -2, 0.7, -1.8, 0xf49a7a);
   addToyZone(THREE, island, "water", 2.2, 0.7, -1.7, 0x73c7ed);
+  islandDecorations(selectedChild()?.id)
+    .filter((decor) => decor.unlocked)
+    .forEach((decor) => addToyDecoration(THREE, island, decor));
 
   const kid = new THREE.Mesh(
     new THREE.SphereGeometry(0.22, 18, 12),
@@ -2753,6 +2884,45 @@ function addToyZone(THREE, group, type, x, y, z, color) {
   );
   box.position.set(x, y + 0.3, z);
   group.add(box);
+}
+
+function addToyDecoration(THREE, group, decor) {
+  const positions = {
+    starter_flag: [-2.9, 0.86, 1.2],
+    study_sprout: [2.8, 0.82, 0.8],
+    collection_hall: [1.2, 0.78, 2.45],
+    pet_house: [2.6, 0.78, -2.3],
+    skill_bridge: [-0.6, 0.78, -2.6],
+  };
+  const [x, y, z] = positions[decor.id] || [0, 0.8, 0];
+  const material = new THREE.MeshStandardMaterial({ color: 0xfff3d0, roughness: 0.86 });
+  if (decor.id === "starter_flag") {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.75, 8), new THREE.MeshStandardMaterial({ color: 0x8c5a35 }));
+    const flag = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.24, 0.035), new THREE.MeshStandardMaterial({ color: 0xf2bd3a, roughness: 0.76 }));
+    pole.position.set(x, y + 0.32, z);
+    flag.position.set(x + 0.18, y + 0.56, z);
+    group.add(pole, flag);
+    return;
+  }
+  if (decor.id === "study_sprout") {
+    const sprout = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.42, 7), new THREE.MeshStandardMaterial({ color: 0x4fae5c, roughness: 0.9 }));
+    sprout.position.set(x, y + 0.22, z);
+    group.add(sprout);
+    return;
+  }
+  if (decor.id === "skill_bridge") {
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.12, 0.22), new THREE.MeshStandardMaterial({ color: 0xc88a4a, roughness: 0.88 }));
+    bridge.position.set(x, y + 0.12, z);
+    bridge.rotation.y = -0.4;
+    group.add(bridge);
+    return;
+  }
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.34, 0.42), material);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.28, 4), new THREE.MeshStandardMaterial({ color: decor.id === "pet_house" ? 0xf49a7a : 0x73c7ed, roughness: 0.82 }));
+  base.position.set(x, y + 0.18, z);
+  roof.position.set(x, y + 0.52, z);
+  roof.rotation.y = Math.PI / 4;
+  group.add(base, roof);
 }
 
 function shouldShowMoodModal() {
@@ -3114,6 +3284,8 @@ function kidIslandView({ child, tasks, rate, mood, streak }) {
       </div>
       ${islandMap()}
     </section>
+
+    ${islandBuildPanel(child.id)}
 
     ${
       focusedZone?.id === "calm"
@@ -4653,6 +4825,8 @@ function overviewTab() {
   const dailyPacksOpened = dailyXpRecord.packsOpened || 0;
   const nextTask = remainingTasks[0] || null;
   const support = parentSupportSuggestion(child, mood, nextTask, rate);
+  const islandDecor = islandDecorations(child.id);
+  const unlockedDecor = islandDecor.filter((decor) => decor.unlocked);
   return `
     <div class="parent-shell">
       <section class="parent-focus-board">
@@ -4697,6 +4871,16 @@ function overviewTab() {
             <span>${icon("sprout")} ${openSkillMissions} 個能力任務</span>
             <span>${icon("card")} ${collectionFor(child.id).length} 張收藏</span>
             <span>${icon("card")} 今日已開 ${dailyPacksOpened}/${DAILY_REWARDS.packLimit} 包</span>
+          </div>
+          <div class="parent-island-build">
+            <span class="tag">${icon("home")} 小島建造</span>
+            <strong>${unlockedDecor.length}/${islandDecor.length} 個裝飾</strong>
+            <p>裝飾由完成任務、收藏和能力練習解鎖；每日 XP 和卡包已有上限，避免為獎勵過度刷任務。</p>
+            <div>
+              ${islandDecor
+                .map((decor) => `<span class="${decor.unlocked ? "on" : ""}">${decor.unlocked ? icon(decor.icon) : "?"} ${decor.name}</span>`)
+                .join("")}
+            </div>
           </div>
         </aside>
       </section>
