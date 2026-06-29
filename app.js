@@ -248,6 +248,33 @@ const adventurePaths = [
   },
 ];
 
+const weeklyIslandStories = [
+  {
+    id: "lighthouse_festival",
+    title: "燈塔光光節",
+    icon: "lighthouse",
+    color: "blue",
+    intro: "海灣準備開一個小小光光節，Lumo 想把今天的努力變成一盞燈。",
+    reward: "小島夜燈會更亮",
+  },
+  {
+    id: "gallery_opening",
+    title: "圖鑑館小展覽",
+    icon: "book",
+    color: "green",
+    intro: "圖鑑小屋想展出新發現，孩子每完成一步，就多一個故事位置。",
+    reward: "收藏館多一個展示位",
+  },
+  {
+    id: "bridge_day",
+    title: "能力小橋修復日",
+    icon: "knot",
+    color: "gold",
+    intro: "小橋有一塊木板鬆了，生活小能力和小任務都可以幫它變穩。",
+    reward: "小橋變得更穩",
+  },
+];
+
 const islandDecorationCatalog = [
   {
     id: "starter_flag",
@@ -3251,6 +3278,77 @@ function adventurePanel(child, tasks) {
   `;
 }
 
+function storyWeekKey(dateKey = todayKey()) {
+  const date = new Date(`${dateKey}T00:00:00+08:00`);
+  return Math.floor(date.getTime() / (7 * 24 * 60 * 60 * 1000));
+}
+
+function weeklyStoryFor(childId = selectedChild()?.id) {
+  const index = stableIndex(`${childId}:${storyWeekKey()}`, weeklyIslandStories.length);
+  return weeklyIslandStories[index] || weeklyIslandStories[0];
+}
+
+function weeklyStoryPanel(child, tasks) {
+  const story = weeklyStoryFor(child.id);
+  const selected = selectedAdventurePath(child.id);
+  const nextTask = tasks.find((task) => !isDoneToday(task.id));
+  const requiredTasks = requiredChildTasks(child.id);
+  const requiredDone = requiredTasks.filter((task) => isDoneToday(task.id)).length;
+  const decorations = islandDecorations(child.id);
+  const unlockedDecor = decorations.filter((decor) => decor.unlocked);
+  const milestones = [
+    { label: "選好今日線索", done: Boolean(selected), icon: "compass" },
+    { label: "完成一個必須小任務", done: requiredDone >= 1, icon: "star" },
+    { label: "點亮一個小島裝飾", done: unlockedDecor.length >= 1, icon: "home" },
+  ];
+  const doneCount = milestones.filter((item) => item.done).length;
+  const percent = Math.round((doneCount / milestones.length) * 100);
+  const nextLabel = !selected
+    ? "先選今日線索"
+    : nextTask
+      ? `推進「${nextTask.title}」`
+      : "看看圖鑑收藏";
+  const nextAction = !selected
+    ? "document.querySelector('.daily-adventure-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })"
+    : nextTask
+      ? `startTask('${nextTask.id}')`
+      : "setKidTab('collection')";
+  return `
+    <section class="weekly-story-panel ${story.color}">
+      <div class="weekly-story-art" aria-hidden="true">
+        <span>${icon(story.icon)}</span>
+        <i>${icon("lumo")}</i>
+      </div>
+      <div class="weekly-story-copy">
+        <span class="tag">${icon("calendar")} 本週小島故事</span>
+        <h2>${story.title}</h2>
+        <p>${story.intro}</p>
+        <small>${story.reward}</small>
+      </div>
+      <div class="weekly-story-progress">
+        <div>
+          <strong>${percent}%</strong>
+          <span>章節進度</span>
+        </div>
+        <div class="weekly-story-meter"><span style="--value:${percent}%"></span></div>
+        <div class="weekly-story-steps">
+          ${milestones
+            .map(
+              (item) => `
+                <span class="${item.done ? "done" : ""}">
+                  <b>${item.done ? "✓" : icon(item.icon)}</b>
+                  ${item.label}
+                </span>
+              `,
+            )
+            .join("")}
+        </div>
+        <button class="button primary" onclick="${nextAction}">${esc(nextLabel)}</button>
+      </div>
+    </section>
+  `;
+}
+
 function kidIslandView({ child, tasks, rate, mood, streak }) {
   const focusedZone = state.kidZoneFocus ? zoneCatalog.find((zone) => zone.id === state.kidZoneFocus) : null;
   const filteredTasks = focusedZone ? tasks.filter((task) => zoneForTask(task).id === focusedZone.id) : tasks;
@@ -3271,6 +3369,7 @@ function kidIslandView({ child, tasks, rate, mood, streak }) {
 	  const focusZone = focusTask ? zoneForTask(focusTask) : null;
 	  return `
 	    ${adventurePanel(child, tasks)}
+	    ${weeklyStoryPanel(child, tasks)}
 	    ${islandMoodLight({ rate, mood, requiredDone, requiredTotal: requiredTasks.length, focusTask })}
 	    ${islandFootprintTrail({ child, streak, focusTask })}
 
@@ -5151,7 +5250,7 @@ function floatingNarratorWidget(route = state.route) {
     state.narratorFabX != null && state.narratorFabY != null
       ? `style="left:${state.narratorFabX}px; top:${state.narratorFabY}px; right:auto; bottom:auto;"`
       : "";
-  const forceCompactNarrator = route === "kid" && state.mapMode === "3d";
+  const forceCompactNarrator = route === "kid" && ((state.kidTab || "island") === "island" || state.mapMode === "3d");
   if (state.narratorCollapsed || forceCompactNarrator) {
     return `
       <button class="narrator-fab route-${route}" data-narrator-fab ${fabStyle} onclick="setNarratorCollapsed(${forceCompactNarrator ? "true" : "false"})" aria-label="打開任務小旁白">
