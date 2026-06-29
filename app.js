@@ -2357,6 +2357,28 @@ function nextTaskForZone(zoneId, childId = selectedChild()?.id) {
   return todayChildTasks(childId).find((task) => zoneForTask(task).id === zoneId && !isDoneToday(task.id));
 }
 
+function zoneLandmarkMarkup(zone, index) {
+  // 四個區域的地標元件：中心 icon + 兩個衛星裝飾，避開大文字卡遮住地圖背景。
+  const matrix = [
+    { main: "boat", decor: ["⚓", "🚩"], lift: "🚩" },     // 晨光碼頭：船 / 碼頭 / 旗
+    { main: "leaf", decor: ["📚", "🍃"], lift: "🍃" },       // 學習樹林：葉 / 書本 / 發光葉
+    { main: "home", decor: ["📦", "🧺"], lift: "💡" },       // 家務港灣：屋 / 整理箱 / 洗衣繩
+    { main: "water", decor: ["🫧", "🌙"], lift: "🫧" },      // 平靜海灣：水 / 泡泡 / 月亮石
+  ];
+  const set = matrix[index] || matrix[0];
+  const decors = set.decor
+    .map((emoji, i) => `<span class="zone-decor zone-decor-${i + 1}" aria-hidden="true">${emoji}</span>`)
+    .join("");
+  return `
+    <span class="zone-pedestal" aria-hidden="true"></span>
+    <span class="zone-cluster">
+      <span class="zone-pin" aria-hidden="true">${icon(set.main)}</span>
+      ${decors}
+      <span class="zone-lift zone-lift-${set.main}" aria-hidden="true">${set.lift}</span>
+    </span>
+  `;
+}
+
 function islandMap(options = {}) {
   const child = selectedChild();
   const zones = child ? zoneStats(child.id) : zoneCatalog.map((zone) => ({ ...zone, total: 0, done: 0, progress: 0 }));
@@ -2385,17 +2407,30 @@ function islandMap(options = {}) {
           <div class="companion" title="Lumo 光點夥伴">${icon("lumo")}</div>
           <div class="explorer" title="小任務探索員">${childAvatarMarkup("map")}</div>
           ${zones
-            .map(
-              (zone, index) => `
-                <button class="zone zone-${index + 1} ${zone.theme} ${state.kidZoneFocus === zone.id ? "active" : ""}" type="button" aria-label="${zone.name}，本區任務 ${zone.done}/${zone.total || 0}，完成 ${zone.progress}%" onclick="selectMapZone('${zone.id}')">
-                  <span class="zone-pin">${icon(zone.icon)}</span>
+            .map((zone, index) => {
+              const completion = zone.total === 0
+                ? "fresh"
+                : zone.progress >= 100
+                  ? "complete"
+                  : zone.progress > 0
+                    ? "progress"
+                    : "fresh";
+              return `
+                <button class="zone zone-${index + 1} ${zone.theme} is-${completion} ${state.kidZoneFocus === zone.id ? "active" : ""}"
+                  data-zone="${zone.id}"
+                  data-theme="${zone.theme}"
+                  data-progress="${zone.progress}"
+                  type="button"
+                  aria-label="${zone.name}，本區任務 ${zone.done}/${zone.total || 0}，完成 ${zone.progress}%"
+                  onclick="selectMapZone('${zone.id}')">
+                  ${zoneLandmarkMarkup(zone, index)}
                   <span class="zone-label">
                     <strong class="zone-title">${zone.name}</strong>
                     <small class="zone-meta">${zone.progress}%</small>
                   </span>
                 </button>
-              `,
-            )
+              `;
+            })
             .join("")}
         </div>
       </div>
