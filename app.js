@@ -146,6 +146,14 @@ const zoneCatalog = [
     icon: "boat",
     theme: "gold",
     copy: "把出門前的小事排好，今天會順一點。",
+    scene: {
+      greeting: "碼頭的小船在等我們出發。",
+      art: ["⛵", "🚩", "⚓", "☀️"],
+      prompt: "開始今天的第一步",
+      hint: "先把要帶的東西放好，再上船。",
+      lit: "碼頭今天所有船都已經平安回來了。",
+      litArt: ["⛵", "🚩", "✨"],
+    },
   },
   {
     id: "study",
@@ -155,6 +163,14 @@ const zoneCatalog = [
     icon: "leaf",
     theme: "green",
     copy: "先做一題或一行，讓腦袋慢慢進入狀態。",
+    scene: {
+      greeting: "樹屋的書本在等一點點翻頁聲。",
+      art: ["📚", "🍃", "🌿", "✨"],
+      prompt: "走進樹林開始",
+      hint: "先讀一題或寫一行，讓樹葉知道你來過。",
+      lit: "今天的樹葉已經全部亮起來了。",
+      litArt: ["📚", "🍃", "✨"],
+    },
   },
   {
     id: "home",
@@ -164,6 +180,14 @@ const zoneCatalog = [
     icon: "home",
     theme: "coral",
     copy: "生活小事也可以拆成很容易開始的一步。",
+    scene: {
+      greeting: "小屋的窗燈在等你回來打開。",
+      art: ["🏠", "📦", "🧺", "💡"],
+      prompt: "回到小屋開始",
+      hint: "先收一件小東西，再決定下一步。",
+      lit: "小屋的燈今晚全部亮著了。",
+      litArt: ["🏠", "💡", "✨"],
+    },
   },
   {
     id: "calm",
@@ -173,6 +197,14 @@ const zoneCatalog = [
     icon: "water",
     theme: "blue",
     copy: "休息、放鬆和回來繼續，都是練習的一部分。",
+    scene: {
+      greeting: "海灣的月亮石在等你慢慢靠岸。",
+      art: ["💧", "🫧", "🌙", "✨"],
+      prompt: "在海灣停一停",
+      hint: "先做一個很輕的小動作，讓身體慢下來。",
+      lit: "月亮石今天輕輕亮著，整個海灣很安靜。",
+      litArt: ["🌙", "🫧", "✨"],
+    },
   },
 ];
 
@@ -2357,6 +2389,64 @@ function nextTaskForZone(zoneId, childId = selectedChild()?.id) {
   return todayChildTasks(childId).find((task) => zoneForTask(task).id === zoneId && !isDoneToday(task.id));
 }
 
+function zoneSceneCard({ zone, task }) {
+  // 區域場景卡：聚焦某區時顯示一個小型場景，包含區域招呼語、第一步預覽與開始按鈕。
+  // 完成該區所有今日任務時改為正向完成狀態，沒有任務或全部完成都保持溫和語氣。
+  const scene = zone.scene || {};
+  const total = zone.total || 0;
+  const done = zone.done || 0;
+  const isLit = total > 0 && done >= total;
+  const isEmpty = total === 0;
+  const artList = isLit ? scene.litArt || scene.art || [] : scene.art || [];
+  const stateClass = isLit ? "is-lit" : isEmpty ? "is-empty" : "is-ready";
+  const headline = isLit
+    ? scene.lit || "今天這一區已經全部亮起來。"
+    : isEmpty
+      ? scene.greeting || `${zone.name}今天沒有任務。`
+      : scene.greeting || `${zone.name}等你開始。`;
+  const artMarkup = artList
+    .map((emoji, i) => `<span class="zone-scene-art zone-scene-art-${i + 1}" aria-hidden="true">${emoji}</span>`)
+    .join("");
+  const firstStep = task ? firstStepForTask(task) : "";
+  const ctaLabel = scene.prompt || "開始第一步";
+  return `
+    <section class="map-zone-dock ${zone.theme} ${stateClass}" aria-label="${esc(zone.name)} 場景">
+      <div class="zone-scene-stage" aria-hidden="true">${artMarkup}</div>
+      <div class="zone-scene-body">
+        <header>
+          <span class="zone-scene-tag">${icon(zone.icon)} ${esc(zone.name)}</span>
+          <strong class="zone-scene-count">${done}/${total || 0}</strong>
+        </header>
+        <p class="zone-scene-line">${esc(headline)}</p>
+        ${
+          isLit
+            ? `<p class="zone-scene-sub">${esc(scene.hint || "今天這一區的進度都保留下來，可以隨時回來看。")}</p>`
+            : isEmpty
+              ? `<p class="zone-scene-sub">想試試另一區，或先看今日整體任務。</p>`
+              : `
+                <div class="zone-scene-step">
+                  <span class="zone-scene-step-tag">${icon("spark")} 先做這一步</span>
+                  <strong>${esc(firstStep)}</strong>
+                </div>
+              `
+        }
+        <div class="zone-scene-actions">
+          ${
+            isLit || isEmpty
+              ? `<button class="button ghost" type="button" onclick="selectMapZone('${zone.id}')">關閉場景</button>`
+              : `<button class="button primary" type="button" onclick="startTask('${task.id}')">${esc(ctaLabel)}</button>`
+          }
+          ${
+            isLit
+              ? `<span class="zone-scene-lite-tag">${icon("star")} 今天已點亮</span>`
+              : ""
+          }
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function zoneLandmarkMarkup(zone, index) {
   // 四個區域的地標元件：中心 icon + 兩個衛星裝飾，避開大文字卡遮住地圖背景。
   const matrix = [
@@ -2437,18 +2527,7 @@ function islandMap(options = {}) {
       ${
         focusedZone
           ? `
-            <div class="map-zone-dock ${focusedZone.theme}">
-              <div>
-                <span>${icon(focusedZone.icon)} ${focusedZone.name}</span>
-                <strong>${focusedZone.done}/${focusedZone.total || 0}</strong>
-              </div>
-              <p>${zoneTask ? esc(firstStepForTask(zoneTask)) : "這一區今天已經亮起來了。"}</p>
-              ${
-                zoneTask
-                  ? `<button class="button primary" onclick="startTask('${zoneTask.id}')">開始第一步</button>`
-                  : `<button class="button ghost" onclick="selectMapZone('${focusedZone.id}')">返回地圖</button>`
-              }
-            </div>
+            ${zoneSceneCard({ zone: focusedZone, task: zoneTask })}
           `
           : ""
       }
